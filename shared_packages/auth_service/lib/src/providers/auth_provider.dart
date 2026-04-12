@@ -1,0 +1,406 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:api_client/api_client.dart';
+import '../models/user.dart';
+import '../models/auth_token.dart';
+import '../auth_service.dart';
+
+/// Authentication state provider
+class AuthProvider extends ChangeNotifier {
+  static const String _tokenKey = 'auth_token';
+  static const String _userKey = 'user_data';
+  
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  final AuthService _authService = AuthService();
+  final ApiClient _apiClient = ApiClient();
+  
+  User? _currentUser;
+  AuthToken? _currentToken;
+  bool _isLoading = false;
+  String? _error;
+
+  /// Current authenticated user
+  User? get currentUser => _currentUser;
+  
+  /// Current authentication token
+  AuthToken? get currentToken => _currentToken;
+  
+  /// Loading state
+  bool get isLoading => _isLoading;
+  
+  /// Error message
+  String? get error => _error;
+  
+  /// Check if user is authenticated
+  bool get isAuthenticated => _currentUser != null && _currentToken?.isValid == true;
+  
+  /// Check if current user is patient
+  bool get isPatient => _currentUser?.isPatient == true;
+  
+  /// Check if current user is vendor
+  bool get isVendor => _currentUser?.isVendor == true;
+  
+  /// Check if current user is admin
+  bool get isAdmin => _currentUser?.isAdmin == true;
+
+  /// Initialize auth state from storage
+  Future<void> initialize() async {
+    _setLoading(true);
+    try {
+      print('AuthProvider: Initializing...');
+      
+      // Load from storage first
+      await _loadFromStorage();
+      
+      // If we have a valid token, set it in the API client
+      if (_currentToken != null && _currentToken!.isValid) {
+        _apiClient.setAuthToken(_currentToken!.token);
+        print('Token loaded and set in API client');
+      } else {
+        print('No valid token found, clearing auth data');
+        await _clearAuthData();
+      }
+      
+      _setLoading(false);
+    } catch (e) {
+      print('AuthProvider initialization error: $e');
+      _setError('Failed to initialize authentication: $e');
+      // Clear corrupted data
+      await _clearAuthData();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Login with phone and password
+  Future<bool> login(String phone, String password) async {
+    _setLoading(true);
+    _clearError();
+    
+    try {
+      print('Starting login process for: $phone');
+      
+      final result = await _authService.login(phone, password);
+      
+      print('Login result: Success=${result.success}, StatusCode=${result.statusCode}');
+      
+      if (result.success && result.data != null) {
+        print('Login successful');
+        
+        // Handle different response formats from backend
+        final responseData = result.data!;
+        Map<String, dynamic> userData;
+        String tokenString;
+        
+        if (responseData.containsKey('user') && responseData.containsKey('token')) {
+          // Format: { user: {...}, token: "..." }
+          print('Using format: user + token');
+          userData = responseData['user'] as Map<String, dynamic>;
+          tokenString = responseData['token'] as String;
+        } else if (responseData.containsKey('data')) {
+          // Format: { data: { user: {...}, accessToken: "..." } }
+          print('Using format: data wrapper');
+          final data = responseData['data'] as Map<String, dynamic>;
+          
+          // CRITICAL FIX: Extract just the user data, not the entire data object
+          userData = data['user'] as Map<String, dynamic>;
+          tokenString = data['accessToken'] as String? ?? data['token'] as String? ?? '';
+          
+          print('Extracted user role: ${userData['role']}');
+        } else if (responseData.containsKey('user') && responseData.containsKey('accessToken')) {
+          // Format: { user: {...}, accessToken: "..." }
+          print('Using format: user + accessToken');
+          userData = responseData['user'] as Map<String, dynamic>;
+          tokenString = responseData['accessToken'] as String;
+        } else {
+          // Assume the entire response is user data and look for token
+          print('Using format: direct response');
+          userData = responseData;
+          tokenString = responseData['accessToken'] as String? ?? responseData['token'] as String? ?? '';
+        }
+        
+        print('User role from backend: ${userData['role']}');
+        
+        if (tokenString.isEmpty) {
+          throw Exception('No token received from backend');
+        }
+        
+        await _setAuthData(userData, tokenString);
+        
+        return true;
+      } else {
+        final errorMessage = result.error?.message ?? 'Login failed';
+        print('Login failed: $errorMessage');
+        _setError(errorMessage);
+        return false;
+      }
+    } catch (e) {
+      final errorMessage = 'Login failed: $e';
+      print('Login exception: $errorMessage');
+      _setError(errorMessage);
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Register new user
+  Future<bool> register(Map<String, dynamic> registrationData) async {
+    _setLoading(true);
+    _clearError();
+    
+    try {
+      print('Starting registration process...');
+      
+      final result = await _authService.register(registrationData);
+      
+      print('Registration result: Success=${result.success}, StatusCode=${result.statusCode}');
+      
+      if (result.success && result.data != null) {
+        print('Registration successful');
+        
+        // Handle different response formats from backend
+        final responseData = result.data!;
+        Map<String, dynamic> userData;
+        String tokenString;
+        
+        if (responseData.containsKey('user') && responseData.containsKey('token')) {
+          // Format: { user: {...}, token: "..." }
+          userData = responseData['user'] as Map<String, dynamic>;
+          tokenString = responseData['token'] as String;
+        } else if (responseData.containsKey('data')) {
+          // Format: { data: { user: {...}, accessToken: "..." } }
+          final data = responseData['data'] as Map<String, dynamic>;
+          userData = data['user'] as Map<String, dynamic>;
+          tokenString = data['accessToken'] as String? ?? data['token'] as String? ?? '';
+        } else {
+          // Assume the entire response is user data and look for token
+          userData = responseData;
+          tokenString = responseData['token'] as String? ?? responseData['accessToken'] as String? ?? '';
+        }
+        
+        print('User role from backend: ${userData['role']}');
+        
+        if (tokenString.isEmpty) {
+          throw Exception('No token received from backend');
+        }
+        
+        await _setAuthData(userData, tokenString);
+        return true;
+      } else {
+        final errorMessage = result.error?.message ?? 'Registration failed';
+        print('Registration failed: $errorMessage');
+        _setError(errorMessage);
+        return false;
+      }
+    } catch (e) {
+      final errorMessage = 'Registration failed: $e';
+      print('Registration exception: $errorMessage');
+      _setError(errorMessage);
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+  /// Logout user
+  Future<void> logout() async {
+    _setLoading(true);
+    
+    try {
+      // Call logout API if token exists
+      if (_currentToken != null) {
+        await _authService.logout();
+      }
+    } catch (e) {
+      // Continue with logout even if API call fails
+      debugPrint('Logout API call failed: $e');
+    }
+    
+    // Clear local data
+    await _clearAuthData();
+    _setLoading(false);
+  }
+
+  /// Refresh authentication token
+  Future<bool> refreshToken() async {
+    if (_currentToken == null) return false;
+    
+    try {
+      final result = await _authService.refreshToken(_currentToken!.token);
+      
+      if (result.success && result.data != null) {
+        final newToken = AuthToken.fromJson(result.data!);
+        await _saveTokenToStorage(newToken);
+        _currentToken = newToken;
+        _apiClient.setAuthToken(newToken.token);
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Token refresh failed: $e');
+    }
+    
+    return false;
+  }
+
+  /// Refresh user profile data
+  Future<bool> refreshProfile() async {
+    if (!isAuthenticated) return false;
+    
+    try {
+      final result = await _authService.getProfile();
+      
+      if (result.success && result.data != null) {
+        _currentUser = User.fromJson(result.data!);
+        await _saveUserToStorage(_currentUser!);
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('Profile refresh failed: $e');
+    }
+    
+    return false;
+  }
+
+  /// Update user profile
+  Future<bool> updateProfile(Map<String, dynamic> profileData) async {
+    if (!isAuthenticated) return false;
+    
+    _setLoading(true);
+    _clearError();
+    
+    try {
+      final result = await _authService.updateProfile(profileData);
+      
+      if (result.success && result.data != null) {
+        _currentUser = User.fromJson(result.data!);
+        await _saveUserToStorage(_currentUser!);
+        notifyListeners();
+        return true;
+      } else {
+        _setError(result.error?.message ?? 'Profile update failed');
+        return false;
+      }
+    } catch (e) {
+      _setError('Profile update failed: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Set authentication data
+  Future<void> _setAuthData(Map<String, dynamic> userData, String tokenString) async {
+    try {
+      print('Setting auth data...');
+      print('User data email: ${userData['email']}');
+      print('User data role: ${userData['role']}');
+      print('Token string: ${tokenString.substring(0, 20)}...');
+      
+      _currentUser = User.fromJson(userData);
+      _currentToken = AuthToken.fromJwtPayload(tokenString, userData);
+      
+      // Set token in API client for authenticated requests
+      _apiClient.setAuthToken(tokenString);
+      
+      // Save to storage for persistence
+      await _saveUserToStorage(_currentUser!);
+      await _saveTokenToStorage(_currentToken!);
+      
+      print('Auth data set successfully');
+      print('Final user: ${_currentUser?.email}, role: ${_currentUser?.role}, isAdmin: ${_currentUser?.isAdmin}');
+      
+      notifyListeners();
+    } catch (e) {
+      print('Error setting auth data: $e');
+      rethrow;
+    }
+  }
+
+  /// Clear authentication data
+  Future<void> _clearAuthData() async {
+    print('Clearing auth data...');
+    _currentUser = null;
+    _currentToken = null;
+    
+    // Clear token from API client
+    _apiClient.clearAuthToken();
+    
+    await _secureStorage.delete(key: _userKey);
+    await _secureStorage.delete(key: _tokenKey);
+    
+    print('Auth data cleared');
+    notifyListeners();
+  }
+
+  /// Load data from secure storage
+  Future<void> _loadFromStorage() async {
+    try {
+      final userJson = await _secureStorage.read(key: _userKey);
+      final tokenJson = await _secureStorage.read(key: _tokenKey);
+      
+      if (userJson != null && tokenJson != null) {
+        _currentUser = User.fromJson(jsonDecode(userJson));
+        _currentToken = AuthToken.fromJson(jsonDecode(tokenJson));
+      }
+    } catch (e) {
+      debugPrint('Failed to load auth data from storage: $e');
+    }
+  }
+
+  /// Save user to secure storage
+  Future<void> _saveUserToStorage(User user) async {
+    try {
+      await _secureStorage.write(key: _userKey, value: jsonEncode(user.toJson()));
+    } catch (e) {
+      debugPrint('Failed to save user to storage: $e');
+    }
+  }
+
+  /// Save token to secure storage
+  Future<void> _saveTokenToStorage(AuthToken token) async {
+    try {
+      await _secureStorage.write(key: _tokenKey, value: jsonEncode(token.toJson()));
+    } catch (e) {
+      debugPrint('Failed to save token to storage: $e');
+    }
+  }
+
+  /// Set loading state
+  void _setLoading(bool loading) {
+    _isLoading = loading;
+    notifyListeners();
+  }
+
+  /// Set error message
+  void _setError(String error) {
+    _error = error;
+    notifyListeners();
+  }
+
+  /// Clear error message
+  void _clearError() {
+    _error = null;
+    notifyListeners();
+  }
+
+  /// Force clear all authentication data (for debugging)
+  Future<void> forceLogout() async {
+    print('Force clearing all authentication data');
+    await _clearAuthData();
+    // Also clear any cached data from secure storage
+    try {
+      await _secureStorage.deleteAll();
+      print('Cleared all secure storage data');
+    } catch (e) {
+      print('Error clearing secure storage: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+}

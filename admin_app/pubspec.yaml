@@ -1,0 +1,55 @@
+name: admin_app
+description: OnMint Admin App - Platform administration
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Shared packages
+  auth_service:
+    path: ../shared_packages/auth_service
+  api_client:
+    path: ../shared_packages/api_client
+  location_service:
+    path: ../shared_packages/location_service
+  ui_components:
+    path: ../shared_packages/ui_components
+  
+  # State management
+  provider: ^6.0.5
+  
+  # Storage
+  flutter_secure_storage: ^9.0.0
+  shared_preferences: ^2.2.2
+  
+  # Location
+  geolocator: ^10.1.0
+  permission_handler: ^11.0.1
+  
+  # Network
+  http: ^1.1.0
+  connectivity_plus: ^5.0.1
+  
+  # UI
+  material_design_icons_flutter: ^7.0.7296
+  flutter_spinkit: ^5.2.0
+  fluttertoast: ^8.2.4
+  cached_network_image: ^3.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  integration_test:
+    sdk: flutter
+  mockito: ^5.4.2
+  build_runner: ^2.4.7
+
+flutter:
+  uses-material-design: true

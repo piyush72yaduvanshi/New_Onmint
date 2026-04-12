@@ -1,0 +1,22 @@
+name: auth_service
+description: "Authentication service package for OnMint Healthcare Platform"
+version: 0.0.1
+homepage:
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.1.0
+  flutter_secure_storage: ^9.0.0
+  provider: ^6.0.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
