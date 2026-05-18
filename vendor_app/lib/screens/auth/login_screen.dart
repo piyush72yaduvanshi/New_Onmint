@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:auth_service/auth_service.dart';
 import 'package:ui_components/ui_components.dart';
+import '../../config/app_colors.dart';
+import '../../config/app_config.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -14,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
+  bool _isLoading = false;
   bool _obscurePassword = true;
 
   @override
@@ -23,54 +26,47 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
+  Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
-    final success = await authProvider.login(
-      _phoneController.text.trim(),
-      _passwordController.text,
-    );
+    setState(() => _isLoading = true);
 
-    if (mounted) {
-      if (success) {
-        print('Vendor login successful!');
-        print('Current user: ${authProvider.currentUser?.email}');
-        print('User role: ${authProvider.currentUser?.role}');
-        print('User status: ${authProvider.currentUser?.status}');
-        print('Is vendor: ${authProvider.isVendor}');
-        
-        // More robust vendor role checking
-        final userRole = authProvider.currentUser?.role;
-        String? normalizedRole;
-        if (userRole != null) {
-          normalizedRole = userRole.toLowerCase().trim();
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      
+      final success = await authProvider.login(
+        _phoneController.text.trim(),
+        _passwordController.text,
+      );
+
+      if (!success) {
+        if (mounted) {
+          ToastUtils.showError(authProvider.error ?? 'Login failed');
         }
-        print('Normalized role: "$normalizedRole"');
-        
-        final vendorRoles = ['doctor', 'pharmacist', 'nurse', 'ambulance', 'bloodbank', 'pathology'];
-        
-        if (normalizedRole != null && (vendorRoles.contains(normalizedRole) || authProvider.isVendor)) {
-          print('Vendor role confirmed, navigating to home');
-          Navigator.of(context).pushReplacementNamed('/home');
-        } else {
-          print('Vendor role check failed');
-          await authProvider.logout();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('This app is for healthcare providers only. Your role: ${authProvider.currentUser?.role ?? 'unknown'}'),
-              backgroundColor: AppColors.error,
-            ),
-          );
+        return;
+      }
+
+      final user = authProvider.currentUser;
+      
+      // Check if user is a vendor
+      if (user != null && AppConfig.vendorRoles.contains(user.role.toLowerCase())) {
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/home');
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(authProvider.error ?? 'Login failed'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        // Not a vendor
+        await authProvider.logout();
+        if (mounted) {
+          ToastUtils.showError('This app is for healthcare providers only');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastUtils.showError('Login failed: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -78,123 +74,166 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.backgroundGradient,
-        ),
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 60),
-                  
-                  Center(
-                    child: Column(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 40),
+                
+                // Logo
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: const BoxDecoration(
+                    gradient: AppColors.primaryGradient,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.medical_services,
+                    size: 60,
+                    color: Colors.white,
+                  ),
+                ),
+                
+                const SizedBox(height: 32),
+                
+                // Title
+                const Text(
+                  'Welcome Back',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                
+                const SizedBox(height: 8),
+                
+                const Text(
+                  'Healthcare Provider Portal',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: AppColors.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                
+                const SizedBox(height: 48),
+                
+                // Phone Field
+                CustomTextField(
+                  controller: _phoneController,
+                  label: 'Phone Number',
+                  hint: 'Enter your phone number',
+                  prefixIcon: Icons.phone,
+                  keyboardType: TextInputType.phone,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your phone number';
+                    }
+                    if (value.length != 10) {
+                      return 'Phone number must be 10 digits';
+                    }
+                    return null;
+                  },
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Password Field
+                CustomTextField(
+                  controller: _passwordController,
+                  label: 'Password',
+                  hint: 'Enter your password',
+                  prefixIcon: Icons.lock,
+                  obscureText: _obscurePassword,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                    ),
+                    onPressed: () {
+                      setState(() => _obscurePassword = !_obscurePassword);
+                    },
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your password';
+                    }
+                    return null;
+                  },
+                ),
+                
+                const SizedBox(height: 32),
+                
+                // Login Button
+                CustomButton(
+                  text: 'Login',
+                  onPressed: _login,
+                  isLoading: _isLoading,
+                ),
+                
+                const SizedBox(height: 24),
+                
+                // Register Link
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      'Don\'t have an account? ',
+                      style: TextStyle(color: AppColors.textSecondary),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/register');
+                      },
+                      child: const Text(
+                        'Register',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                
+                const SizedBox(height: 24),
+                
+                // Development Mode Indicator
+                if (AppConfig.isDevelopmentMode)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.warning),
+                    ),
+                    child: const Column(
                       children: [
-                        Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Icon(
-                            Icons.business,
-                            size: 40,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Vendor Login',
+                        Text(
+                          'Development Mode',
                           style: TextStyle(
-                            fontSize: 28,
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
+                            color: AppColors.warning,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Sign in with your phone number to manage your healthcare services',
+                        SizedBox(height: 4),
+                        Text(
+                          'Test Credentials Available',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 10,
                             color: AppColors.textSecondary,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  
-                  const SizedBox(height: 48),
-                  
-                  TextFormField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    textInputAction: TextInputAction.next,
-                    validator: FormValidators.validatePhone,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone Number',
-                      hintText: 'Enter your phone number',
-                      prefixIcon: Icon(Icons.phone_outlined),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    textInputAction: TextInputAction.done,
-                    validator: (value) => FormValidators.validateRequired(value, fieldName: 'Password'),
-                    onFieldSubmitted: (_) => _handleLogin(),
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      hintText: 'Enter your password',
-                      prefixIcon: const Icon(Icons.lock_outlined),
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
-                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                      ),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 32),
-                  
-                  Consumer<AuthProvider>(
-                    builder: (context, authProvider, child) {
-                      return ElevatedButton(
-                        onPressed: authProvider.isLoading ? null : _handleLogin,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
-                        child: authProvider.isLoading
-                            ? const SmallLoadingWidget()
-                            : const Text('Sign In'),
-                      );
-                    },
-                  ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        "Don't have an account? ",
-                        style: TextStyle(color: AppColors.textSecondary),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pushNamed('/register'),
-                        child: const Text('Sign Up'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+              ],
             ),
           ),
         ),

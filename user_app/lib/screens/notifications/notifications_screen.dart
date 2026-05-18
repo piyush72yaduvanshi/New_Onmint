@@ -1,301 +1,209 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:auth_service/auth_service.dart';
-import 'package:ui_components/ui_components.dart';
 
+/// Notifications screen - View all notifications
 class NotificationsScreen extends StatefulWidget {
-  const NotificationsScreen({Key? key}) : super(key: key);
+  const NotificationsScreen({super.key});
 
   @override
   State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  late final PatientService _patientService;
-  List<Map<String, dynamic>> _notifications = [];
-  bool _isLoading = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _patientService = PatientService();
-    _loadNotifications();
-  }
-
-  Future<void> _loadNotifications() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      final response = await _patientService.getNotifications();
-      if (response.success && response.data != null) {
-        setState(() {
-          _notifications = List<Map<String, dynamic>>.from(response.data!['notifications'] ?? []);
-        });
-      } else {
-        setState(() {
-          _error = response.error?.message ?? 'Failed to load notifications';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _error = 'Error loading notifications: $e';
-      });
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
+  // Mock notifications data
+  final List<Map<String, dynamic>> _notifications = [
+    {
+      'id': '1',
+      'title': 'Appointment Confirmed',
+      'body': 'Your appointment with Dr. Smith is confirmed for tomorrow at 10:00 AM',
+      'type': 'appointment',
+      'time': DateTime.now().subtract(const Duration(hours: 2)),
+      'read': false,
+    },
+    {
+      'id': '2',
+      'title': 'Prescription Ready',
+      'body': 'Your prescription is ready for pickup at City Pharmacy',
+      'type': 'prescription',
+      'time': DateTime.now().subtract(const Duration(hours: 5)),
+      'read': false,
+    },
+    {
+      'id': '3',
+      'title': 'Lab Report Available',
+      'body': 'Your blood test results are now available',
+      'type': 'report',
+      'time': DateTime.now().subtract(const Duration(days: 1)),
+      'read': true,
+    },
+    {
+      'id': '4',
+      'title': 'Payment Successful',
+      'body': 'Your payment of ₹500 has been processed successfully',
+      'type': 'payment',
+      'time': DateTime.now().subtract(const Duration(days: 2)),
+      'read': true,
+    },
+  ];
 
   @override
   Widget build(BuildContext context) {
+    final unreadCount = _notifications.where((n) => !n['read']).length;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Notifications'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
         actions: [
-          if (_notifications.isNotEmpty)
+          if (unreadCount > 0)
             TextButton(
               onPressed: _markAllAsRead,
-              child: const Text(
-                'Mark All Read',
-                style: TextStyle(color: Colors.white),
-              ),
+              child: const Text('Mark all read'),
             ),
         ],
       ),
-      body: _buildBody(),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      );
-    }
-
-    if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _error!,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
+      body: _notifications.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.notifications_none, size: 64, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No notifications',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                  ),
+                ],
               ),
-              textAlign: TextAlign.center,
+            )
+          : ListView.builder(
+              itemCount: _notifications.length,
+              itemBuilder: (context, index) {
+                final notification = _notifications[index];
+                return _buildNotificationCard(notification);
+              },
             ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadNotifications,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_notifications.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.notifications_none,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No notifications yet',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'You\'ll see appointment updates and important messages here',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _loadNotifications,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: _notifications.length,
-        itemBuilder: (context, index) {
-          final notification = _notifications[index];
-          return _buildNotificationCard(notification);
-        },
-      ),
     );
   }
 
   Widget _buildNotificationCard(Map<String, dynamic> notification) {
-    final isRead = notification['isRead'] ?? false;
-    final title = notification['title'] ?? 'Notification';
-    final message = notification['message'] ?? '';
-    final createdAt = notification['createdAt'] ?? '';
-    final type = notification['type'] ?? 'info';
+    final isRead = notification['read'] as bool;
+    final time = notification['time'] as DateTime;
+    final type = notification['type'] as String;
 
-    IconData iconData;
+    IconData icon;
     Color iconColor;
-
     switch (type) {
       case 'appointment':
-        iconData = Icons.calendar_today;
-        iconColor = AppColors.primary;
+        icon = Icons.event;
+        iconColor = Colors.blue;
         break;
-      case 'booking':
-        iconData = Icons.book_online;
+      case 'prescription':
+        icon = Icons.medication;
         iconColor = Colors.green;
         break;
-      case 'emergency':
-        iconData = Icons.emergency;
-        iconColor = Colors.red;
+      case 'report':
+        icon = Icons.description;
+        iconColor = Colors.purple;
         break;
       case 'payment':
-        iconData = Icons.payment;
+        icon = Icons.payment;
         iconColor = Colors.orange;
         break;
       default:
-        iconData = Icons.info;
-        iconColor = Colors.blue;
+        icon = Icons.notifications;
+        iconColor = Colors.grey;
     }
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: isRead ? 1 : 3,
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
+    return Dismissible(
+      key: Key(notification['id']),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        color: Colors.red,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 16),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      onDismissed: (direction) {
+        setState(() {
+          _notifications.remove(notification);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Notification deleted')),
+        );
+      },
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        color: isRead ? null : Colors.blue.shade50,
+        child: ListTile(
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: iconColor),
           ),
-          child: Icon(
-            iconData,
-            color: iconColor,
-            size: 24,
+          title: Text(
+            notification['title'],
+            style: TextStyle(
+              fontWeight: isRead ? FontWeight.normal : FontWeight.bold,
+            ),
           ),
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            fontWeight: isRead ? FontWeight.w500 : FontWeight.w700,
-            color: isRead ? Colors.grey[700] : Colors.black,
-          ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (message.isNotEmpty) ...[
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 4),
+              Text(notification['body']),
               const SizedBox(height: 4),
               Text(
-                message,
+                _formatTime(time),
                 style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 14,
-                ),
-              ),
-            ],
-            if (createdAt.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                _formatDateTime(createdAt),
-                style: TextStyle(
-                  color: Colors.grey[500],
                   fontSize: 12,
+                  color: Colors.grey[600],
                 ),
               ),
             ],
-          ],
+          ),
+          trailing: !isRead
+              ? Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Colors.blue,
+                    shape: BoxShape.circle,
+                  ),
+                )
+              : null,
+          onTap: () {
+            setState(() {
+              notification['read'] = true;
+            });
+            // TODO: Navigate to relevant screen
+          },
         ),
-        trailing: !isRead
-            ? Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                ),
-              )
-            : null,
-        onTap: () => _markAsRead(notification),
       ),
     );
   }
 
-  String _formatDateTime(String dateTimeStr) {
-    try {
-      final dateTime = DateTime.parse(dateTimeStr);
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
-
-      if (difference.inDays > 0) {
-        return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
-      } else if (difference.inHours > 0) {
-        return '${difference.inHours} hour${difference.inHours > 1 ? 's' : ''} ago';
-      } else if (difference.inMinutes > 0) {
-        return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} ago';
-      } else {
-        return 'Just now';
+  void _markAllAsRead() {
+    setState(() {
+      for (var notification in _notifications) {
+        notification['read'] = true;
       }
-    } catch (e) {
-      return dateTimeStr;
-    }
+    });
   }
 
-  Future<void> _markAsRead(Map<String, dynamic> notification) async {
-    if (notification['isRead'] == true) return;
+  String _formatTime(DateTime time) {
+    final now = DateTime.now();
+    final difference = now.difference(time);
 
-    try {
-      final notificationId = notification['_id'] ?? notification['id'];
-      if (notificationId != null) {
-        await _patientService.markNotificationAsRead(notificationId);
-        setState(() {
-          notification['isRead'] = true;
-        });
-      }
-    } catch (e) {
-      print('Error marking notification as read: $e');
-    }
-  }
-
-  Future<void> _markAllAsRead() async {
-    try {
-      await _patientService.markAllNotificationsAsRead();
-      setState(() {
-        for (var notification in _notifications) {
-          notification['isRead'] = true;
-        }
-      });
-    } catch (e) {
-      print('Error marking all notifications as read: $e');
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    } else {
+      return '${time.day}/${time.month}/${time.year}';
     }
   }
 }

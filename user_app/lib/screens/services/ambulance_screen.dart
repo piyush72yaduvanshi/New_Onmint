@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:auth_service/auth_service.dart';
-import 'package:ui_components/ui_components.dart';
+import 'package:api_client/api_client.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class AmbulanceScreen extends StatefulWidget {
-  const AmbulanceScreen({Key? key}) : super(key: key);
+  const AmbulanceScreen({super.key});
 
   @override
   State<AmbulanceScreen> createState() => _AmbulanceScreenState();
@@ -15,6 +16,8 @@ class _AmbulanceScreenState extends State<AmbulanceScreen> {
   List<Map<String, dynamic>> _ambulances = [];
   String _selectedType = '';
   bool _isLoading = true;
+  Position? _currentPosition;
+  String _currentAddress = 'Fetching location...';
   
   final List<Map<String, dynamic>> _ambulanceTypes = [
     {'id': '', 'name': 'All Types', 'icon': Icons.local_shipping},
@@ -31,28 +34,77 @@ class _AmbulanceScreenState extends State<AmbulanceScreen> {
   void initState() {
     super.initState();
     _patientService = PatientService();
+    _getCurrentLocation();
     _loadAmbulances();
   }
 
+  Future<void> _getCurrentLocation() async {
+    try {
+      // Request location permission
+      final permission = await Permission.location.request();
+      
+      if (permission.isGranted) {
+        // Get current position
+        final position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+        
+        if (mounted) {
+          setState(() {
+            _currentPosition = position;
+            _currentAddress = '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
+          });
+        }
+        
+        // You can add reverse geocoding here to get actual address
+        // For now, we'll use coordinates
+      } else {
+        if (mounted) {
+          setState(() {
+            _currentAddress = 'Location permission denied';
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error getting location: $e');
+      if (mounted) {
+        setState(() {
+          _currentAddress = 'Unable to get location';
+        });
+      }
+    }
+  }
+
   Future<void> _loadAmbulances() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     
     try {
-      final response = await _patientService.getNearbyServices(
-        serviceType: 'ambulance',
+      // Use searchAmbulances API to get ambulance providers
+      final response = await _patientService.searchAmbulances(
         limit: 50,
+        latitude: _currentPosition?.latitude,
+        longitude: _currentPosition?.longitude,
       );
-
-      if (response.success && response.data != null) {
-        final ambulances = response.data!['ambulances'] ?? [];
+      
+      // Backend returns ambulances directly in 'data' array
+      final ambulances = (response['data'] as List?)
+          ?.cast<Map<String, dynamic>>() ?? [];
+      
+      if (mounted) {
         setState(() {
-          _ambulances = List<Map<String, dynamic>>.from(ambulances);
+          _ambulances = ambulances;
+          _isLoading = false;
         });
       }
     } catch (e) {
-      print('Error loading ambulances: $e');
-    } finally {
-      setState(() => _isLoading = false);
+      debugPrint('Error loading ambulances: $e');
+      if (mounted) {
+        setState(() {
+          _ambulances = [];
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -107,36 +159,59 @@ class _AmbulanceScreenState extends State<AmbulanceScreen> {
             ],
           ),
           const SizedBox(height: 12),
+          // Location display
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.location_on, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _currentAddress,
+                    style: const TextStyle(fontSize: 12, color: Colors.white),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (_currentPosition == null)
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           const Text(
             'Need immediate medical assistance? Call emergency ambulance now',
             style: TextStyle(fontSize: 14, color: Colors.white70),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _callEmergency(),
-                  icon: const Icon(Icons.call),
-                  label: const Text('Call 108'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
+          // Single Call button (full width)
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _callEmergency(),
+              icon: const Icon(Icons.call, size: 24),
+              label: const Text('Call Emergency', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              const SizedBox(width: 12),
-              ElevatedButton(
-                onPressed: () => _bookEmergency(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.red,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-                child: const Text('Book Now'),
-              ),
-            ],
+            ),
           ),
         ],
       ),
@@ -336,33 +411,320 @@ class _AmbulanceScreenState extends State<AmbulanceScreen> {
     );
   }
 
-  void _callEmergency() {
-    // TODO: Implement emergency call
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Calling emergency services...'),
-        backgroundColor: Colors.red,
+  void _callEmergency() async {
+    if (_currentPosition == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Getting your location... Please wait.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      await _getCurrentLocation();
+      if (_currentPosition == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Unable to get location. Please enable location services.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    try {
+      // Use emergency API endpoint
+      final response = await _patientService.triggerEmergency(
+        location: {
+          'type': 'Point',
+          'coordinates': [_currentPosition!.longitude, _currentPosition!.latitude],
+        },
+        address: _currentAddress,
+        notes: 'Emergency call - 108. Immediate medical assistance required.',
+        type: 'ambulance',
+      );
+      
+      debugPrint('Emergency response: $response');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🚑 Emergency ambulance requested! Help is on the way.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        
+        // Fetch and show nearby ambulances
+        _fetchAndShowNearbyAmbulances();
+      }
+    } catch (e) {
+      debugPrint('Emergency call error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Emergency request failed: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _fetchAndShowNearbyAmbulances() async {
+    if (_currentPosition == null) return;
+
+    try {
+      // Fetch ambulances within 50km radius using the search API
+      final response = await _patientService.searchAmbulances(
+        latitude: _currentPosition!.latitude,
+        longitude: _currentPosition!.longitude,
+        maxDistance: 50, // 50km radius
+      );
+      
+      debugPrint('Nearby ambulances response: $response');
+      
+      // Backend returns ambulances directly in 'data' array, not nested in 'data.ambulances'
+      final ambulances = (response['data'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      
+      if (mounted) {
+        _showAmbulancesDialog(ambulances);
+      }
+    } catch (e) {
+      debugPrint('Error fetching nearby ambulances: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not fetch nearby ambulances: $e'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showAmbulancesDialog(List<Map<String, dynamic>> ambulances) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.local_shipping, color: Color(0xFFFF9A9E)),
+            const SizedBox(width: 8),
+            const Text('Available Ambulances'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ambulances.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.info_outline, size: 48, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        'No ambulances found within 50km radius',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 14, color: Colors.grey),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        'Emergency services have been notified and will dispatch the nearest available ambulance.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: ambulances.length,
+                  itemBuilder: (context, index) {
+                    final ambulance = ambulances[index];
+                    final distance = ambulance['distance']?.toStringAsFixed(2) ?? 'N/A';
+                    final isAssigned = ambulance['isAssigned'] == true;
+                    
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      color: isAssigned ? Colors.green.withOpacity(0.1) : null,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: isAssigned 
+                                        ? Colors.green.withOpacity(0.2)
+                                        : const Color(0xFFFF9A9E).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    Icons.local_shipping,
+                                    color: isAssigned ? Colors.green : const Color(0xFFFF9A9E),
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        ambulance['driverName'] ?? 'Ambulance Service',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Vehicle: ${ambulance['vehicleNumber'] ?? 'N/A'}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (isAssigned)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Text(
+                                      'ASSIGNED',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(Icons.location_on, size: 14, color: Colors.grey[600]),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Distance: $distance km',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                                ),
+                                const SizedBox(width: 16),
+                                Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'ETA: ${_calculateETA(distance)} mins',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                                ),
+                              ],
+                            ),
+                            if (ambulance['vehicleType'] != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Type: ${ambulance['vehicleType']}',
+                                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }
 
-  void _bookEmergency() {
-    // TODO: Implement emergency booking
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Booking emergency ambulance...'),
-        backgroundColor: Colors.red,
-      ),
-    );
+  String _calculateETA(String distance) {
+    try {
+      final distanceKm = double.parse(distance);
+      // Assume average speed of 40 km/h in city
+      final timeInHours = distanceKm / 40;
+      final timeInMinutes = (timeInHours * 60).round();
+      return timeInMinutes.toString();
+    } catch (e) {
+      return 'N/A';
+    }
   }
 
-  void _bookAmbulance(Map<String, dynamic> ambulance) {
-    // TODO: Implement ambulance booking
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Booking ${ambulance['driverName']}...'),
-        backgroundColor: const Color(0xFFFF9A9E),
-      ),
-    );
+  void _bookAmbulance(Map<String, dynamic> ambulance) async {
+    if (_currentPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Getting your location... Please wait.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      await _getCurrentLocation();
+      if (_currentPosition == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to get location. Please enable location services.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    try {
+      // Use emergency API endpoint for ambulance booking
+      final response = await _patientService.triggerEmergency(
+        location: {
+          'type': 'Point',
+          'coordinates': [_currentPosition!.longitude, _currentPosition!.latitude],
+        },
+        address: _currentAddress,
+        notes: 'Ambulance booking for ${ambulance['vehicleType'] ?? 'transport'}. Driver: ${ambulance['driverName']}',
+        type: 'ambulance',
+      );
+      
+      debugPrint('Ambulance booking response: $response');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Ambulance booked: ${ambulance['driverName']}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Ambulance booking error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Booking failed: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 }

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:auth_service/auth_service.dart';
-import 'package:ui_components/ui_components.dart';
+import 'package:api_client/api_client.dart';
+import '../../utils/app_colors.dart';
 import 'booking_details_screen.dart';
 
 class MyBookingsScreen extends StatefulWidget {
-  const MyBookingsScreen({Key? key}) : super(key: key);
+  const MyBookingsScreen({super.key});
 
   @override
   State<MyBookingsScreen> createState() => _MyBookingsScreenState();
@@ -20,6 +20,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
   int _currentPage = 1;
   bool _hasMore = false;
   int _selectedTabIndex = 0;
+  bool _showRealtimeBookings = true; // Toggle between regular and realtime bookings
 
   @override
   void initState() {
@@ -35,23 +36,36 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
       _activeBookings.clear();
     }
 
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
-      // Load all bookings
-      final bookingsResponse = await _patientService.getBookings(
-        page: _currentPage,
-        limit: 10,
-      );
-
-      if (bookingsResponse.success && bookingsResponse.data != null) {
-        final bookingsList = List<Map<String, dynamic>>.from(
-          bookingsResponse.data!['bookings'] ?? []
+      List<Map<String, dynamic>> bookingsList = [];
+      
+      if (_showRealtimeBookings) {
+        // Load realtime bookings
+        final realtimeResponse = await _patientService.getMyRealtimeBookings(
+          page: _currentPage,
+          limit: 10,
         );
+        final data = realtimeResponse['data'];
+        if (data is List) {
+          bookingsList = List<Map<String, dynamic>>.from(data);
+        } else if (data is Map && data['bookings'] != null) {
+          bookingsList = List<Map<String, dynamic>>.from(data['bookings']);
+        }
+      } else {
+        // Load regular bookings
+        bookingsList = await _patientService.getBookings(
+          page: _currentPage,
+          limit: 10,
+        );
+      }
         
+      if (mounted) {
         setState(() {
           if (refresh) {
             _bookings = bookingsList;
@@ -62,26 +76,26 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
         });
       }
 
-      // Load active bookings
-      final activeResponse = await _patientService.getActiveBookings();
-      if (activeResponse.success && activeResponse.data != null) {
-        final activeList = List<Map<String, dynamic>>.from(
-          activeResponse.data!['bookings'] ?? []
-        );
+      // Load active bookings (filter from all bookings)
+      final activeList = bookingsList.where((booking) {
+        final status = booking['status']?.toString().toLowerCase() ?? '';
+        return status == 'requested' || status == 'pending' || status == 'accepted' || 
+               status == 'confirmed' || status == 'on_the_way' || status == 'in_progress';
+      }).toList();
         
+      if (mounted) {
         setState(() {
           _activeBookings = activeList;
+          _isLoading = false;
         });
       }
-
-      setState(() {
-        _isLoading = false;
-      });
     } catch (e) {
-      setState(() {
-        _error = 'Error loading bookings: $e';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Error loading bookings: $e';
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -104,32 +118,61 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
       ),
     );
 
-    if (confirmed == true) {
-      try {
-        final response = await _patientService.cancelBooking(bookingId);
-        if (response.success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Booking cancelled successfully'),
-              backgroundColor: Colors.green,
+    if (confirmed == true && mounted) {
+      // Ask for cancellation reason
+      final reasonController = TextEditingController();
+      final reason = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Cancellation Reason'),
+          content: TextField(
+            controller: reasonController,
+            decoration: const InputDecoration(
+              hintText: 'Please provide a reason...',
+              border: OutlineInputBorder(),
             ),
-          );
-          _loadBookings(refresh: true);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(response.error?.message ?? 'Failed to cancel booking'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error cancelling booking: $e'),
-            backgroundColor: Colors.red,
+            maxLines: 3,
           ),
-        );
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, reasonController.text.trim()),
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      );
+
+      if (reason != null && reason.isNotEmpty && mounted) {
+        try {
+          if (_showRealtimeBookings) {
+            await _patientService.cancelRealtimeBooking(bookingId, reason: reason);
+          } else {
+            await _patientService.cancelBooking(bookingId, reason: reason);
+          }
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Booking cancelled successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            _loadBookings(refresh: true);
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error cancelling booking: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
       }
     }
   }
@@ -138,10 +181,20 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Bookings'),
+        title: Text(_showRealtimeBookings ? 'Instant Bookings' : 'Regular Bookings'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _showRealtimeBookings = !_showRealtimeBookings;
+              });
+              _loadBookings(refresh: true);
+            },
+            icon: Icon(_showRealtimeBookings ? Icons.flash_on : Icons.calendar_today),
+            tooltip: _showRealtimeBookings ? 'Switch to Regular' : 'Switch to Instant',
+          ),
           IconButton(
             onPressed: () => _loadBookings(refresh: true),
             icon: const Icon(Icons.refresh),
@@ -225,9 +278,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.error, size: 48, color: AppColors.error),
+                            const Icon(Icons.error, size: 48, color: AppColors.error),
                             const SizedBox(height: 16),
-                            Text(_error!, style: TextStyle(color: AppColors.error)),
+                            Text(_error!, style: const TextStyle(color: AppColors.error)),
                             const SizedBox(height: 16),
                             ElevatedButton(
                               onPressed: () => _loadBookings(refresh: true),
@@ -322,13 +375,18 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
   }
 
   Widget _buildBookingCard(Map<String, dynamic> booking) {
-    final providerName = booking['provider'] != null
-        ? '${booking['provider']['firstName'] ?? ''} ${booking['provider']['lastName'] ?? ''}'.trim()
-        : 'Service Provider';
+    // Handle both regular and realtime bookings
+    final providerData = booking['provider'] ?? booking['acceptedProvider'];
+    final providerName = providerData != null
+        ? '${providerData['firstName'] ?? ''} ${providerData['lastName'] ?? ''}'.trim()
+        : (_showRealtimeBookings ? 'Waiting for doctor...' : 'Service Provider');
     final serviceType = booking['serviceType']?.toString() ?? 'Service';
     final status = booking['status']?.toString().toLowerCase() ?? 'pending';
-    final scheduledTime = booking['scheduledTime']?.toString() ?? '';
+    final scheduledTime = booking['scheduledTime']?.toString() ?? booking['preferredTime']?.toString() ?? '';
     final bookingId = booking['_id'] ?? booking['id'] ?? '';
+    final urgency = booking['urgency']?.toString();
+    final isEmergency = booking['isEmergency'] == true;
+    final notifiedCount = booking['notifiedProviders']?.length ?? 0;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -340,15 +398,10 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: AppColors.primary,
-                  child: Text(
-                    providerName.isNotEmpty
-                        ? providerName.substring(0, 1).toUpperCase()
-                        : 'S',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  backgroundColor: isEmergency ? Colors.red : AppColors.primary,
+                  child: Icon(
+                    isEmergency ? Icons.emergency : Icons.local_hospital,
+                    color: Colors.white,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -363,12 +416,35 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      Text(
-                        serviceType,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            serviceType.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (_showRealtimeBookings && urgency != null) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: _getUrgencyColor(urgency).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                urgency.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: _getUrgencyColor(urgency),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),
@@ -391,18 +467,53 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
               ],
             ),
             const SizedBox(height: 12),
+            
+            // Show notified providers count for realtime bookings
+            if (_showRealtimeBookings && status == 'pending' && notifiedCount > 0) ...[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.notifications_active, size: 16, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$notifiedCount doctors notified - waiting for acceptance',
+                      style: const TextStyle(fontSize: 12, color: Colors.blue),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            
             Row(
               children: [
-                Icon(Icons.calendar_today, size: 16, color: AppColors.textSecondary),
+                const Icon(Icons.calendar_today, size: 16, color: AppColors.textSecondary),
                 const SizedBox(width: 8),
                 Text(
                   scheduledTime.isNotEmpty
                       ? DateTime.parse(scheduledTime).toString().split('.')[0]
                       : 'Time TBD',
-                  style: TextStyle(color: AppColors.textSecondary),
+                  style: const TextStyle(color: AppColors.textSecondary),
                 ),
               ],
             ),
+            
+            // Show description for realtime bookings
+            if (_showRealtimeBookings && booking['description'] != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                booking['description'].toString(),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            
             const SizedBox(height: 12),
             Row(
               children: [
@@ -428,7 +539,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                       onPressed: () => _cancelBooking(bookingId),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.error,
-                        side: BorderSide(color: AppColors.error),
+                        side: const BorderSide(color: AppColors.error),
                       ),
                       child: const Text('Cancel'),
                     ),
@@ -445,17 +556,36 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     switch (status) {
       case 'accepted':
       case 'confirmed':
+      case 'on_the_way':
         return AppColors.success;
       case 'requested':
       case 'pending':
         return AppColors.warning;
+      case 'in_progress':
+        return Colors.blue;
       case 'completed':
         return AppColors.info;
       case 'cancelled':
       case 'rejected':
+      case 'expired':
         return AppColors.error;
       default:
         return AppColors.textSecondary;
+    }
+  }
+  
+  Color _getUrgencyColor(String urgency) {
+    switch (urgency.toLowerCase()) {
+      case 'emergency':
+        return Colors.red;
+      case 'high':
+        return Colors.orange;
+      case 'medium':
+        return Colors.blue;
+      case 'low':
+        return Colors.green;
+      default:
+        return Colors.grey;
     }
   }
 }

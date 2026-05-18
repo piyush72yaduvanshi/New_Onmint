@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:auth_service/auth_service.dart';
-import 'package:ui_components/ui_components.dart';
+import '../config/app_colors.dart';
 import '../config/app_config.dart';
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({Key? key}) : super(key: key);
+  const SplashScreen({super.key});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -15,66 +15,38 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeApp();
+    _checkAuth();
   }
 
-  Future<void> _initializeApp() async {
-    try {
-      print('🚀 Vendor Splash Screen: Initializing app...');
+  Future<void> _checkAuth() async {
+    await Future.delayed(const Duration(seconds: 2));
+    
+    if (!mounted) return;
+    
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    await authProvider.initialize();
+    
+    if (!mounted) return;
+    
+    if (authProvider.isAuthenticated) {
+      final user = authProvider.currentUser;
       
-      // Initialize authentication
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      await authProvider.initialize();
-
-      print('🔍 Vendor Auth Status: isAuthenticated=${authProvider.isAuthenticated}');
-      print('🔍 Vendor Auth Status: isVendor=${authProvider.isVendor}');
-      print('🔍 Current User: ${authProvider.currentUser?.email ?? 'None'}');
-      print('🔍 Current Token: ${authProvider.currentToken != null ? 'Present' : 'None'}');
-
-      // Wait for splash screen duration
-      await Future.delayed(const Duration(seconds: 2));
-
-      // Check if we're in development mode
-      if (AppConfig.developmentMode) {
-        print('🔧 VENDOR DEVELOPMENT MODE: Always navigating to login for testing');
-        if (mounted) {
-          // Clear any existing auth data for testing if configured
-          if (AppConfig.forceLogoutOnStart) {
-            await authProvider.forceLogout();
-          }
-          Navigator.of(context).pushReplacementNamed('/login');
-        }
-        return;
+      // Check if user is a vendor
+      if (user != null && AppConfig.vendorRoles.contains(user.role.toLowerCase())) {
+        Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        // Not a vendor, logout and go to login
+        await authProvider.logout();
+        Navigator.pushReplacementNamed(context, '/login');
       }
-
-      // PRODUCTION AUTHENTICATION FLOW
-      if (mounted) {
-        if (authProvider.isAuthenticated && authProvider.isVendor) {
-          print('✅ Vendor is authenticated and is vendor, navigating to home');
-          Navigator.of(context).pushReplacementNamed('/home');
-        } else {
-          print('❌ Vendor not authenticated or not vendor, navigating to login');
-          // Clear any invalid cached data
-          if (authProvider.isAuthenticated && !authProvider.isVendor) {
-            print('🧹 Clearing cached data for non-vendor user');
-            await authProvider.logout();
-          }
-          Navigator.of(context).pushReplacementNamed('/login');
-        }
-      }
-    } catch (e) {
-      print('💥 Vendor Splash Screen initialization error: $e');
-      // Handle initialization error
-      if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/login');
-      }
+    } else {
+      Navigator.pushReplacementNamed(context, '/login');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.primary,
       body: Container(
         decoration: const BoxDecoration(
           gradient: AppColors.primaryGradient,
@@ -84,65 +56,44 @@ class _SplashScreenState extends State<SplashScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 120,
-                height: 120,
+                padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
+                  shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 5),
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
                     ),
                   ],
                 ),
                 child: const Icon(
-                  Icons.business,
-                  size: 60,
+                  Icons.medical_services,
+                  size: 80,
                   color: AppColors.primary,
                 ),
               ),
-              
-              const SizedBox(height: 24),
-              
+              const SizedBox(height: 32),
               const Text(
-                'OnMint Vendor',
+                AppConfig.appName,
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
               ),
-              
               const SizedBox(height: 8),
-              
               const Text(
-                'Healthcare Service Provider',
+                'Healthcare Provider Portal',
                 style: TextStyle(
                   fontSize: 16,
                   color: Colors.white70,
                 ),
               ),
-              
               const SizedBox(height: 48),
-              
-              const LoadingWidget(
-                color: Colors.white,
-                showMessage: false,
-              ),
-              
-              const SizedBox(height: 24),
-              
-              // Development mode indicator
-              Text(
-                AppConfig.developmentMode 
-                    ? 'Development Mode: Always Login'
-                    : 'Production Mode',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
-                ),
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
               ),
             ],
           ),

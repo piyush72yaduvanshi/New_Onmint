@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:auth_service/auth_service.dart';
-import 'package:ui_components/ui_components.dart';
+import 'package:api_client/api_client.dart';
+import '../../utils/app_colors.dart';
+import '../consultation/video_consultation_screen.dart';
 
 class BookingDetailsScreen extends StatefulWidget {
   final String bookingId;
 
   const BookingDetailsScreen({
-    Key? key,
+    super.key,
     required this.bookingId,
-  }) : super(key: key);
+  });
 
   @override
   State<BookingDetailsScreen> createState() => _BookingDetailsScreenState();
@@ -38,31 +39,28 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   Future<void> _loadBookingDetails() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
-      final response = await _patientService.getBookingDetails(widget.bookingId);
+      final response = await _patientService.getBookingById(widget.bookingId);
       
-      if (response.success && response.data != null) {
+      if (mounted) {
         setState(() {
-          _booking = response.data;
-        });
-      } else {
-        setState(() {
-          _error = response.error?.message ?? 'Failed to load booking details';
+          _booking = response;
+          _isLoading = false;
         });
       }
     } catch (e) {
-      setState(() {
-        _error = 'Error loading booking details: $e';
-      });
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Error loading booking details: $e';
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -78,14 +76,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     }
 
     try {
-      final response = await _patientService.rateBooking(
-        widget.bookingId,
+      final success = await _patientService.rateService(
+        bookingId: widget.bookingId,
         rating: _selectedRating,
-        review: _reviewController.text.trim(),
+        review: _reviewController.text.trim().isEmpty ? null : _reviewController.text.trim(),
       );
 
-      if (response.success) {
-        if (mounted) {
+      if (mounted) {
+        if (success) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Rating submitted successfully!'),
@@ -98,12 +96,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             _reviewController.clear();
           });
           _loadBookingDetails();
-        }
-      } else {
-        if (mounted) {
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(response.error?.message ?? 'Failed to submit rating'),
+            const SnackBar(
+              content: Text('Failed to submit rating'),
               backgroundColor: Colors.red,
             ),
           );
@@ -143,9 +139,9 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.error, size: 48, color: AppColors.error),
+                      const Icon(Icons.error, size: 48, color: AppColors.error),
                       const SizedBox(height: 16),
-                      Text(_error!, style: TextStyle(color: AppColors.error)),
+                      Text(_error!, style: const TextStyle(color: AppColors.error)),
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: _loadBookingDetails,
@@ -209,7 +205,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                                             ),
                                             Text(
                                               _booking!['provider']?['phone'] ?? 'N/A',
-                                              style: TextStyle(
+                                              style: const TextStyle(
                                                 fontSize: 14,
                                                 color: AppColors.textSecondary,
                                               ),
@@ -339,6 +335,36 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                             const SizedBox(height: 16),
                           ],
 
+                          // Video Consultation Button
+                          if (_booking!['consultationType']?.toString().toLowerCase() == 'video-call' &&
+                              ['accepted', 'in_progress'].contains(_booking!['status']?.toString().toLowerCase()))
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => VideoConsultationScreen(
+                                        bookingId: widget.bookingId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.video_call),
+                                label: const Text('Join Video Consultation'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF667eea),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                ),
+                              ),
+                            ),
+
+                          if (_booking!['consultationType']?.toString().toLowerCase() == 'video-call' &&
+                              ['accepted', 'in_progress'].contains(_booking!['status']?.toString().toLowerCase()))
+                            const SizedBox(height: 16),
+
                           // Rating Button
                           if (_booking!['status']?.toString().toLowerCase() == 'completed')
                             SizedBox(
@@ -464,7 +490,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         children: [
           Text(
             label,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 14,
               color: AppColors.textSecondary,
             ),

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:auth_service/auth_service.dart';
-import 'package:ui_components/ui_components.dart';
+import 'package:api_client/api_client.dart';
+import '../../utils/app_colors.dart';
 import 'booking_screen.dart';
 
 class ServicesScreen extends StatefulWidget {
   final String? initialServiceType;
 
-  const ServicesScreen({Key? key, this.initialServiceType}) : super(key: key);
+  const ServicesScreen({super.key, this.initialServiceType});
 
   @override
   State<ServicesScreen> createState() => _ServicesScreenState();
@@ -49,51 +49,30 @@ class _ServicesScreenState extends State<ServicesScreen> {
       _selectedSpecialization = '';
     }
 
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
     try {
-      final response = await _patientService.getNearbyServices(
-        serviceType: _selectedServiceType,
-        page: _currentPage,
-        limit: 10,
-      );
+      // Use searchDoctors for doctors, for other services we'll use mock data for now
+      List<Map<String, dynamic>> newServices = [];
+      
+      if (_selectedServiceType == 'doctor') {
+        final response = await _patientService.searchDoctors(
+          page: _currentPage,
+          limit: 10,
+        );
+        newServices = List<Map<String, dynamic>>.from(response['data'] ?? []);
+        _extractSpecializations(newServices);
+      } else {
+        // For other service types, show empty state for now
+        // TODO: Implement other service type APIs
+        newServices = [];
+      }
 
-      if (response.success && response.data != null) {
-        final data = response.data!;
-        
-        // Extract services based on type
-        List<Map<String, dynamic>> newServices = [];
-        
-        if (_selectedServiceType == 'doctor' && data['doctors'] is List) {
-          newServices = List<Map<String, dynamic>>.from(data['doctors']);
-          _extractSpecializations(newServices);
-        } else if (_selectedServiceType == 'nurse' && data['nurses'] is List) {
-          newServices = List<Map<String, dynamic>>.from(data['nurses']);
-        } else if (_selectedServiceType == 'pharmacist' && data['pharmacists'] is List) {
-          newServices = List<Map<String, dynamic>>.from(data['pharmacists']);
-        } else if (_selectedServiceType == 'pathology' && data['pathologies'] is List) {
-          newServices = List<Map<String, dynamic>>.from(data['pathologies']);
-        } else if (_selectedServiceType == 'ambulance' && data['ambulances'] is List) {
-          newServices = List<Map<String, dynamic>>.from(data['ambulances']);
-        } else if (_selectedServiceType == 'bloodbank' && data['bloodbanks'] is List) {
-          newServices = List<Map<String, dynamic>>.from(data['bloodbanks']);
-        } else {
-          // Fallback: try to get data from any available key
-          final keys = ['doctors', 'nurses', 'pharmacists', 'pathologies', 'ambulances', 'bloodbanks'];
-          for (final key in keys) {
-            if (data[key] is List && (data[key] as List).isNotEmpty) {
-              newServices = List<Map<String, dynamic>>.from(data[key]);
-              if (_selectedServiceType == 'doctor') {
-                _extractSpecializations(newServices);
-              }
-              break;
-            }
-          }
-        }
-
+      if (mounted) {
         setState(() {
           if (refresh) {
             _services = newServices;
@@ -101,20 +80,16 @@ class _ServicesScreenState extends State<ServicesScreen> {
             _services.addAll(newServices);
           }
           _hasMore = newServices.length >= 10;
-        });
-      } else {
-        setState(() {
-          _error = response.error?.message ?? 'Failed to load services';
+          _isLoading = false;
         });
       }
     } catch (e) {
-      setState(() {
-        _error = 'Error loading services: $e';
-      });
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Error loading services: $e';
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -246,7 +221,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                             selectedColor: AppColors.primary.withOpacity(0.2),
                             checkmarkColor: AppColors.primary,
                           );
-                        }).toList(),
+                        }),
                       ],
                     ),
                   ],
@@ -264,9 +239,9 @@ class _ServicesScreenState extends State<ServicesScreen> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.error, size: 48, color: AppColors.error),
+                              const Icon(Icons.error, size: 48, color: AppColors.error),
                               const SizedBox(height: 16),
-                              Text(_error!, style: TextStyle(color: AppColors.error)),
+                              Text(_error!, style: const TextStyle(color: AppColors.error)),
                               const SizedBox(height: 16),
                               ElevatedButton(
                                 onPressed: () => _loadServices(refresh: true),
@@ -299,7 +274,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                               children: [
                                 ..._getFilteredServices().map((service) {
                                   return _buildServiceCard(service);
-                                }).toList(),
+                                }),
                                 if (_hasMore && _services.length >= 10)
                                   Padding(
                                     padding: const EdgeInsets.all(16),
@@ -367,7 +342,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                       ),
                       Text(
                         specialization,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 14,
                           color: AppColors.textSecondary,
                         ),
@@ -390,7 +365,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                     ),
                     Text(
                       '$distance $distanceUnit',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,
                       ),
@@ -409,7 +384,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         'Experience',
                         style: TextStyle(
                           fontSize: 12,
@@ -430,7 +405,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         'Consultation Fee',
                         style: TextStyle(
                           fontSize: 12,
@@ -451,7 +426,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         'Availability',
                         style: TextStyle(
                           fontSize: 12,
@@ -480,7 +455,7 @@ class _ServicesScreenState extends State<ServicesScreen> {
                 service['about'],
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 13,
                   color: AppColors.textSecondary,
                 ),

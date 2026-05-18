@@ -2,58 +2,36 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class CustomTextField extends StatefulWidget {
-  final String? label;
+  final String label;
   final String? hint;
-  final String? initialValue;
   final TextEditingController? controller;
+  final TextInputType keyboardType;
+  final bool obscureText;
   final String? Function(String?)? validator;
   final void Function(String)? onChanged;
-  final void Function(String)? onSubmitted;
-  final void Function()? onTap;
-  final TextInputType? keyboardType;
-  final TextInputAction? textInputAction;
-  final bool obscureText;
-  final bool readOnly;
-  final bool enabled;
-  final int? maxLines;
-  final int? minLines;
-  final int? maxLength;
-  final List<TextInputFormatter>? inputFormatters;
-  final Widget? prefixIcon;
+  final IconData? prefixIcon;
   final Widget? suffixIcon;
-  final String? prefixText;
-  final String? suffixText;
-  final EdgeInsetsGeometry? contentPadding;
-  final FocusNode? focusNode;
-  final bool autofocus;
+  final int? maxLines;
+  final int? maxLength;
+  final bool enabled;
+  final List<TextInputFormatter>? inputFormatters;
   final TextCapitalization textCapitalization;
 
   const CustomTextField({
     super.key,
-    this.label,
+    required this.label,
     this.hint,
-    this.initialValue,
     this.controller,
+    this.keyboardType = TextInputType.text,
+    this.obscureText = false,
     this.validator,
     this.onChanged,
-    this.onSubmitted,
-    this.onTap,
-    this.keyboardType,
-    this.textInputAction,
-    this.obscureText = false,
-    this.readOnly = false,
-    this.enabled = true,
-    this.maxLines = 1,
-    this.minLines,
-    this.maxLength,
-    this.inputFormatters,
     this.prefixIcon,
     this.suffixIcon,
-    this.prefixText,
-    this.suffixText,
-    this.contentPadding,
-    this.focusNode,
-    this.autofocus = false,
+    this.maxLines = 1,
+    this.maxLength,
+    this.enabled = true,
+    this.inputFormatters,
     this.textCapitalization = TextCapitalization.none,
   });
 
@@ -62,7 +40,7 @@ class CustomTextField extends StatefulWidget {
 }
 
 class _CustomTextFieldState extends State<CustomTextField> {
-  late bool _obscureText;
+  bool _obscureText = false;
 
   @override
   void initState() {
@@ -75,41 +53,33 @@ class _CustomTextFieldState extends State<CustomTextField> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.label != null) ...[
-          Text(
-            widget.label!,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w500,
-            ),
+        Text(
+          widget.label,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
           ),
-          const SizedBox(height: 8),
-        ],
+        ),
+        const SizedBox(height: 8),
         TextFormField(
           controller: widget.controller,
-          initialValue: widget.initialValue,
+          keyboardType: widget.keyboardType,
+          obscureText: _obscureText,
           validator: widget.validator,
           onChanged: widget.onChanged,
-          onFieldSubmitted: widget.onSubmitted,
-          onTap: widget.onTap,
-          keyboardType: widget.keyboardType,
-          textInputAction: widget.textInputAction,
-          obscureText: _obscureText,
-          readOnly: widget.readOnly,
-          enabled: widget.enabled,
           maxLines: widget.obscureText ? 1 : widget.maxLines,
-          minLines: widget.minLines,
           maxLength: widget.maxLength,
+          enabled: widget.enabled,
           inputFormatters: widget.inputFormatters,
-          focusNode: widget.focusNode,
-          autofocus: widget.autofocus,
           textCapitalization: widget.textCapitalization,
           decoration: InputDecoration(
             hintText: widget.hint,
-            prefixIcon: widget.prefixIcon,
+            prefixIcon: widget.prefixIcon != null ? Icon(widget.prefixIcon) : null,
             suffixIcon: widget.obscureText
                 ? IconButton(
                     icon: Icon(
-                      _obscureText ? Icons.visibility : Icons.visibility_off,
+                      _obscureText ? Icons.visibility_off : Icons.visibility,
                     ),
                     onPressed: () {
                       setState(() {
@@ -118,10 +88,29 @@ class _CustomTextFieldState extends State<CustomTextField> {
                     },
                   )
                 : widget.suffixIcon,
-            prefixText: widget.prefixText,
-            suffixText: widget.suffixText,
-            contentPadding: widget.contentPadding,
-            counterText: widget.maxLength != null ? null : '',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.grey),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.red),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.red, width: 2),
+            ),
+            filled: true,
+            fillColor: widget.enabled ? Colors.white : Colors.grey.shade100,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           ),
         ),
       ],

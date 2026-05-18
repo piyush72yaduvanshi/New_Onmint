@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
 import 'api_response.dart';
-import 'api_config.dart';
 
 /// Mock service for development when backend is not available
 class MockService {

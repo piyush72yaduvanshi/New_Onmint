@@ -15,6 +15,8 @@ class User {
   final DateTime createdAt;
   final bool isActive;
   final String? status;
+  final String? profilePicture;
+  final String? profilePictureUrl;
   
   // Vendor-specific fields
   final String? specialization;
@@ -40,6 +42,8 @@ class User {
     required this.createdAt,
     required this.isActive,
     this.status,
+    this.profilePicture,
+    this.profilePictureUrl,
     this.specialization,
     this.qualifications,
     this.experience,
@@ -85,6 +89,8 @@ class User {
         createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
         isActive: json['isActive'] ?? true,
         status: json['status']?.toString(),
+        profilePicture: json['profilePicture']?.toString(),
+        profilePictureUrl: json['profilePictureUrl']?.toString(),
         specialization: json['specialization']?.toString(),
         qualifications: json['qualifications'] is List ? (json['qualifications'] as List).map((e) => e.toString()).toList() : null,
         experience: json['experience'] is int ? json['experience'] : int.tryParse(json['experience']?.toString() ?? ''),
@@ -119,6 +125,8 @@ class User {
       'createdAt': createdAt.toIso8601String(),
       'isActive': isActive,
       if (status != null) 'status': status,
+      if (profilePicture != null) 'profilePicture': profilePicture,
+      if (profilePictureUrl != null) 'profilePictureUrl': profilePictureUrl,
       if (specialization != null) 'specialization': specialization,
       if (qualifications != null) 'qualifications': qualifications,
       if (experience != null) 'experience': experience,
@@ -157,6 +165,8 @@ class User {
     DateTime? createdAt,
     bool? isActive,
     String? status,
+    String? profilePicture,
+    String? profilePictureUrl,
     String? specialization,
     List<String>? qualifications,
     int? experience,
@@ -180,6 +190,8 @@ class User {
       createdAt: createdAt ?? this.createdAt,
       isActive: isActive ?? this.isActive,
       status: status ?? this.status,
+      profilePicture: profilePicture ?? this.profilePicture,
+      profilePictureUrl: profilePictureUrl ?? this.profilePictureUrl,
       specialization: specialization ?? this.specialization,
       qualifications: qualifications ?? this.qualifications,
       experience: experience ?? this.experience,

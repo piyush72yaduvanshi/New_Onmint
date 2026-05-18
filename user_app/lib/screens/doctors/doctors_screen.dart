@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:auth_service/auth_service.dart';
-import '../booking/book_appointment_screen.dart';
+import 'package:api_client/api_client.dart';
+import '../booking/booking_flow_screen.dart';
+import '../services/instant_booking_screen.dart';
 
 class DoctorsScreen extends StatefulWidget {
-  const DoctorsScreen({Key? key}) : super(key: key);
+  const DoctorsScreen({super.key});
 
   @override
   State<DoctorsScreen> createState() => _DoctorsScreenState();
@@ -18,18 +19,19 @@ class _DoctorsScreenState extends State<DoctorsScreen> {
   bool _isLoading = false;
   String? _selectedSpecialization;
   String? _selectedCity;
+  String? _selectedConsultationType; // NEW: Consultation type filter
   
   final List<String> _specializations = [
     'General Physician',
-    'Cardiologist',
-    'Dermatologist',
-    'Pediatrician',
-    'Orthopedic',
-    'Gynecologist',
-    'Neurologist',
-    'Psychiatrist',
-    'ENT Specialist',
-    'Ophthalmologist',
+    'Cardiology',
+    'Dermatology',
+    'Pediatrics',
+    'Orthopedics',
+    'Gynecology',
+    'Neurology',
+    'Psychiatry',
+    'ENT',
+    'Ophthalmology',
   ];
 
   @override
@@ -46,34 +48,38 @@ class _DoctorsScreenState extends State<DoctorsScreen> {
   }
 
   Future<void> _loadDoctors() async {
-    setState(() => _isLoading = true);
+    if (!mounted) return;
+    
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
 
     try {
-      final response = await _patientService.getAllDoctors(limit: 50);
+      final response = await _patientService.searchDoctors(
+        limit: 100,
+        consultationType: _selectedConsultationType, // Pass consultation type filter
+      );
       
-      if (response.success && response.data != null) {
-        final doctors = response.data!['doctors'] ?? [];
+      final doctors = response['data'] ?? [];
+      if (mounted) {
         setState(() {
           _doctors = List<Map<String, dynamic>>.from(doctors);
           _filteredDoctors = _doctors;
+          _isLoading = false;
         });
-      } else {
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(response.error?.message ?? 'Failed to load doctors'),
+            content: Text('Error loading doctors: $e'),
             backgroundColor: Colors.red,
           ),
         );
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading doctors: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      setState(() => _isLoading = false);
     }
   }
 
@@ -109,9 +115,11 @@ class _DoctorsScreenState extends State<DoctorsScreen> {
     setState(() {
       _selectedSpecialization = null;
       _selectedCity = null;
+      _selectedConsultationType = null; // Clear consultation type filter
       _searchController.clear();
       _filteredDoctors = _doctors;
     });
+    _loadDoctors(); // Reload without filters
   }
 
   @override
@@ -170,7 +178,7 @@ class _DoctorsScreenState extends State<DoctorsScreen> {
                           const DropdownMenuItem(value: null, child: Text('All')),
                           ..._specializations.map((spec) => 
                             DropdownMenuItem(value: spec, child: Text(spec))
-                          ).toList(),
+                          ),
                         ],
                         onChanged: (value) {
                           setState(() {
@@ -201,6 +209,138 @@ class _DoctorsScreenState extends State<DoctorsScreen> {
                       ),
                     ),
                   ],
+                ),
+                
+                const SizedBox(height: 12),
+                
+                // Consultation Type Filter
+                DropdownButtonFormField<String>(
+                  value: _selectedConsultationType,
+                  decoration: const InputDecoration(
+                    labelText: 'Consultation Type',
+                    prefixIcon: Icon(Icons.medical_services),
+                    border: OutlineInputBorder(),
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: null, child: Text('All Types')),
+                    DropdownMenuItem(
+                      value: 'video-call',
+                      child: Row(
+                        children: [
+                          Icon(Icons.videocam, color: Colors.blue, size: 18),
+                          SizedBox(width: 8),
+                          Text('Video Call'),
+                        ],
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: 'in-person',
+                      child: Row(
+                        children: [
+                          Icon(Icons.person, color: Colors.green, size: 18),
+                          SizedBox(width: 8),
+                          Text('In-Person Visit'),
+                        ],
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: 'phone-call',
+                      child: Row(
+                        children: [
+                          Icon(Icons.phone, color: Colors.orange, size: 18),
+                          SizedBox(width: 8),
+                          Text('Phone Call'),
+                        ],
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedConsultationType = value;
+                    });
+                    _loadDoctors(); // Reload with new filter
+                  },
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Instant Doctor Appointment Button
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const InstantBookingScreen(
+                          serviceType: 'doctor',
+                        ),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF667EEA).withOpacity(0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.flash_on,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Get Instant Doctor Appointment',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'First available doctor will accept your request',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(
+                          Icons.arrow_forward_ios,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -406,6 +546,83 @@ class _DoctorsScreenState extends State<DoctorsScreen> {
                     ),
                   );
                 }).toList(),
+              ),
+            ],
+            
+            // Consultation Types
+            if (doctor['consultationTypes'] is List && 
+                (doctor['consultationTypes'] as List).isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(Icons.medical_services, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Available: ',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  Expanded(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: (doctor['consultationTypes'] as List).map((type) {
+                        IconData icon;
+                        Color color;
+                        String label;
+                        
+                        switch (type.toString()) {
+                          case 'video-call':
+                            icon = Icons.videocam;
+                            color = Colors.blue;
+                            label = 'Video';
+                            break;
+                          case 'in-person':
+                            icon = Icons.person;
+                            color = Colors.green;
+                            label = 'In-Person';
+                            break;
+                          case 'phone-call':
+                            icon = Icons.phone;
+                            color = Colors.orange;
+                            label = 'Phone';
+                            break;
+                          default:
+                            icon = Icons.help;
+                            color = Colors.grey;
+                            label = type.toString();
+                        }
+                        
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: color.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(icon, size: 14, color: color),
+                              const SizedBox(width: 4),
+                              Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: color,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
               ),
             ],
             
@@ -622,11 +839,21 @@ class _DoctorsScreenState extends State<DoctorsScreen> {
   }
 
   void _bookAppointment(Map<String, dynamic> doctor) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => BookAppointmentScreen(doctor: doctor),
-      ),
-    );
+    try {
+      final doctorUser = User.fromJson(doctor);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => BookingFlowScreen(
+            provider: doctorUser,
+            serviceType: 'doctor',
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading doctor: $e')),
+      );
+    }
   }
 }

@@ -3,9 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:auth_service/auth_service.dart';
 import 'package:ui_components/ui_components.dart';
 import '../config/app_config.dart';
+import '../config/app_colors.dart';
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({Key? key}) : super(key: key);
+  const SplashScreen({super.key});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -20,51 +21,28 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _initializeApp() async {
     try {
-      print('🚀 Splash Screen: Initializing app...');
-      
-      // Initialize authentication
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       await authProvider.initialize();
 
-      print('🔍 Auth Status: isAuthenticated=${authProvider.isAuthenticated}');
-      print('🔍 Auth Status: isPatient=${authProvider.isPatient}');
-      print('🔍 Current User: ${authProvider.currentUser?.email ?? 'None'}');
-      print('🔍 Current Token: ${authProvider.currentToken != null ? 'Present' : 'None'}');
-
-      // Wait for splash screen duration
       await Future.delayed(const Duration(seconds: 2));
 
-      // Check if we're in development mode
-      if (AppConfig.developmentMode) {
-        print('🔧 DEVELOPMENT MODE: Always navigating to login for testing');
-        if (mounted) {
-          // Clear any existing auth data for testing if configured
-          if (AppConfig.forceLogoutOnStart) {
-            await authProvider.forceLogout();
-          }
-          Navigator.of(context).pushReplacementNamed('/login');
-        }
+      if (!mounted) return;
+
+      if (AppConfig.developmentMode && AppConfig.forceLogoutOnStart) {
+        await authProvider.forceLogout();
+        Navigator.of(context).pushReplacementNamed('/login');
         return;
       }
 
-      // PRODUCTION AUTHENTICATION FLOW
-      if (mounted) {
-        if (authProvider.isAuthenticated && authProvider.isPatient) {
-          print('✅ User is authenticated and is patient, navigating to home');
-          Navigator.of(context).pushReplacementNamed('/home');
-        } else {
-          print('❌ User not authenticated or not patient, navigating to login');
-          // Clear any invalid cached data
-          if (authProvider.isAuthenticated && !authProvider.isPatient) {
-            print('🧹 Clearing cached data for non-patient user');
-            await authProvider.logout();
-          }
-          Navigator.of(context).pushReplacementNamed('/login');
+      if (authProvider.isAuthenticated && authProvider.isPatient) {
+        Navigator.of(context).pushReplacementNamed('/home');
+      } else {
+        if (authProvider.isAuthenticated && !authProvider.isPatient) {
+          await authProvider.logout();
         }
+        Navigator.of(context).pushReplacementNamed('/login');
       }
     } catch (e) {
-      print('💥 Splash Screen initialization error: $e');
-      // Handle initialization error
       if (mounted) {
         Navigator.of(context).pushReplacementNamed('/login');
       }
@@ -83,7 +61,6 @@ class _SplashScreenState extends State<SplashScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // App Logo
               Container(
                 width: 120,
                 height: 120,
@@ -107,11 +84,10 @@ class _SplashScreenState extends State<SplashScreen> {
               
               const SizedBox(height: 24),
               
-              // App Name
               const Text(
                 'OnMint',
                 style: TextStyle(
-                  fontSize: 32,
+                  fontSize: 36,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
@@ -119,9 +95,8 @@ class _SplashScreenState extends State<SplashScreen> {
               
               const SizedBox(height: 8),
               
-              // App Tagline
               const Text(
-                'Your Healthcare Companion',
+                'Your Healthcare Partner',
                 style: TextStyle(
                   fontSize: 16,
                   color: Colors.white70,
@@ -130,24 +105,7 @@ class _SplashScreenState extends State<SplashScreen> {
               
               const SizedBox(height: 48),
               
-              // Loading Indicator
-              const LoadingWidget(
-                color: Colors.white,
-                showMessage: false,
-              ),
-              
-              const SizedBox(height: 24),
-              
-              // Development mode indicator
-              Text(
-                AppConfig.developmentMode 
-                    ? 'Development Mode: Always Login'
-                    : 'Production Mode',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
-                ),
-              ),
+              const LoadingWidget(color: Colors.white),
             ],
           ),
         ),

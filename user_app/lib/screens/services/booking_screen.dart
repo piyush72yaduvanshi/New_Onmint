@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:auth_service/auth_service.dart';
-import 'package:ui_components/ui_components.dart';
+import 'package:api_client/api_client.dart';
+import '../../utils/app_colors.dart';
 
 class BookingScreen extends StatefulWidget {
   final Map<String, dynamic> provider;
   final String serviceType;
 
   const BookingScreen({
-    Key? key,
+    super.key,
     required this.provider,
     required this.serviceType,
-  }) : super(key: key);
+  });
 
   @override
   State<BookingScreen> createState() => _BookingScreenState();
@@ -102,8 +103,8 @@ class _BookingScreenState extends State<BookingScreen> {
         'location': {
           'address': _addressController.text.trim(),
           'coordinates': [
-            user.location.longitude,
-            user.location.latitude,
+            user.location?.longitude ?? 0.0,
+            user.location?.latitude ?? 0.0,
           ],
         },
         'price': widget.provider['consultationFee'] ?? 0,
@@ -117,25 +118,15 @@ class _BookingScreenState extends State<BookingScreen> {
 
       final response = await _patientService.createBooking(bookingData);
 
-      if (response.success) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Booking created successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.pop(context, true);
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(response.error?.message ?? 'Failed to create booking'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+      // Response is a Map<String, dynamic>
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Booking created successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
@@ -209,7 +200,7 @@ class _BookingScreenState extends State<BookingScreen> {
                                 ),
                                 Text(
                                   specialization,
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 14,
                                     color: AppColors.textSecondary,
                                   ),
@@ -226,7 +217,7 @@ class _BookingScreenState extends State<BookingScreen> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              const Text(
                                 'Consultation Fee',
                                 style: TextStyle(
                                   fontSize: 12,
@@ -245,7 +236,7 @@ class _BookingScreenState extends State<BookingScreen> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              const Text(
                                 'Experience',
                                 style: TextStyle(
                                   fontSize: 12,

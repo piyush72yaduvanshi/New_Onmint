@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:auth_service/auth_service.dart';
-import 'package:ui_components/ui_components.dart';
+import 'package:api_client/api_client.dart';
 
 class BloodbankScreen extends StatefulWidget {
-  const BloodbankScreen({Key? key}) : super(key: key);
+  const BloodbankScreen({super.key});
 
   @override
   State<BloodbankScreen> createState() => _BloodbankScreenState();
@@ -36,24 +35,39 @@ class _BloodbankScreenState extends State<BloodbankScreen> {
   }
 
   Future<void> _loadBloodBanks() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     
     try {
-      final response = await _patientService.getNearbyServices(
-        serviceType: 'bloodbank',
+      // Search for blood banks with optional blood group filter
+      final response = await _patientService.searchBloodBanks(
+        bloodGroup: _selectedBloodGroup.isEmpty ? null : _selectedBloodGroup,
         limit: 50,
       );
-
-      if (response.success && response.data != null) {
-        final bloodBanks = response.data!['bloodbanks'] ?? [];
+      
+      final data = response['data'] ?? {};
+      final bloodBanks = (data['bloodBanks'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      
+      if (mounted) {
         setState(() {
-          _bloodBanks = List<Map<String, dynamic>>.from(bloodBanks);
+          _bloodBanks = bloodBanks;
+          _isLoading = false;
         });
       }
     } catch (e) {
-      print('Error loading blood banks: $e');
-    } finally {
-      setState(() => _isLoading = false);
+      debugPrint('Error loading blood banks: $e');
+      if (mounted) {
+        setState(() {
+          _bloodBanks = [];
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load blood banks: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -167,7 +181,10 @@ class _BloodbankScreenState extends State<BloodbankScreen> {
               final isSelected = _selectedBloodGroup == group['id'];
               
               return GestureDetector(
-                onTap: () => setState(() => _selectedBloodGroup = group['id']),
+                onTap: () {
+                  setState(() => _selectedBloodGroup = group['id']);
+                  _loadBloodBanks(); // Reload with filter
+                },
                 child: Container(
                   margin: const EdgeInsets.only(right: 12),
                   child: Column(
@@ -391,13 +408,179 @@ class _BloodbankScreenState extends State<BloodbankScreen> {
     );
   }
 
-  void _requestBlood(Map<String, dynamic> bloodBank) {
-    // TODO: Implement blood request
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Requesting blood from ${bloodBank['bankName']}...'),
-        backgroundColor: const Color(0xFFFF416C),
+  void _requestBlood(Map<String, dynamic> bloodBank) async {
+    // Show dialog to select blood group and units
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => _BloodRequestDialog(
+        bloodBank: bloodBank,
+        availableGroups: _bloodGroups.where((g) => g['id'].isNotEmpty).toList(),
       ),
+    );
+    
+    if (result != null && mounted) {
+      try {
+        // Create booking for blood bank
+        final bookingData = {
+          'serviceType': 'bloodbank',
+          'provider': bloodBank['_id'],
+          'bloodGroup': result['bloodGroup'],
+          'unitsRequired': result['units'],
+          'notes': result['notes'] ?? 'Blood request',
+        };
+        
+        await _patientService.createBooking(bookingData);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Blood request submitted successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to request blood: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+}
+
+// Dialog for blood request
+class _BloodRequestDialog extends StatefulWidget {
+  final Map<String, dynamic> bloodBank;
+  final List<Map<String, dynamic>> availableGroups;
+
+  const _BloodRequestDialog({
+    required this.bloodBank,
+    required this.availableGroups,
+  });
+
+  @override
+  State<_BloodRequestDialog> createState() => _BloodRequestDialogState();
+}
+
+class _BloodRequestDialogState extends State<_BloodRequestDialog> {
+  String? _selectedBloodGroup;
+  int _units = 1;
+  final _notesController = TextEditingController();
+
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Request Blood from ${widget.bloodBank['bankName']}'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Select Blood Group:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: widget.availableGroups.map((group) {
+                final isSelected = _selectedBloodGroup == group['id'];
+                return GestureDetector(
+                  onTap: () => setState(() => _selectedBloodGroup = group['id']),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isSelected ? group['color'] : Colors.grey[200],
+                      borderRadius: BorderRadius.circular(20),
+                      border: isSelected ? Border.all(color: group['color'], width: 2) : null,
+                    ),
+                    child: Text(
+                      group['name'],
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : Colors.black87,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+            const Text('Units Required:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                IconButton(
+                  onPressed: () {
+                    if (_units > 1) setState(() => _units--);
+                  },
+                  icon: const Icon(Icons.remove_circle_outline),
+                  color: const Color(0xFFFF416C),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '$_units',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    if (_units < 10) setState(() => _units++);
+                  },
+                  icon: const Icon(Icons.add_circle_outline),
+                  color: const Color(0xFFFF416C),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _notesController,
+              decoration: const InputDecoration(
+                labelText: 'Additional Notes (Optional)',
+                border: OutlineInputBorder(),
+                hintText: 'Enter any special requirements...',
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _selectedBloodGroup == null
+              ? null
+              : () {
+                  Navigator.pop(context, {
+                    'bloodGroup': _selectedBloodGroup,
+                    'units': _units,
+                    'notes': _notesController.text,
+                  });
+                },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFFFF416C),
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Submit Request'),
+        ),
+      ],
     );
   }
 }

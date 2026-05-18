@@ -150,7 +150,7 @@ class AdminService {
       }
       
       print('🔍 DEBUG: Query params: $queryParams');
-      print('🔍 DEBUG: Final endpoint: /admin/users${queryParams.isNotEmpty ? '?' + queryParams.entries.map((e) => '${e.key}=${e.value}').join('&') : ''}');
+      print('🔍 DEBUG: Final endpoint: /admin/users${queryParams.isNotEmpty ? '?${queryParams.entries.map((e) => '${e.key}=${e.value}').join('&')}' : ''}');
       
       final response = await _apiClient.get<List<Map<String, dynamic>>>(
         '/admin/users',

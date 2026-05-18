@@ -10,9 +10,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  http: ^1.1.0
   flutter_secure_storage: ^9.0.0
   provider: ^6.0.5
+  api_client:
+    path: ../api_client
 
 dev_dependencies:
   flutter_test:

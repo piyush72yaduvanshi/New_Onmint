@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:auth_service/auth_service.dart';
-import 'package:ui_components/ui_components.dart';
+import 'package:api_client/api_client.dart';
 
 class PathologyScreen extends StatefulWidget {
-  const PathologyScreen({Key? key}) : super(key: key);
+  const PathologyScreen({super.key});
 
   @override
   State<PathologyScreen> createState() => _PathologyScreenState();
 }
 
 class _PathologyScreenState extends State<PathologyScreen> {
-  late final PatientService _patientService;
+  final PatientService _patientService = PatientService();
   
   List<Map<String, dynamic>> _labs = [];
   String _selectedCategory = '';
@@ -32,29 +31,29 @@ class _PathologyScreenState extends State<PathologyScreen> {
   @override
   void initState() {
     super.initState();
-    _patientService = PatientService();
     _loadLabs();
   }
 
   Future<void> _loadLabs() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     
     try {
-      final response = await _patientService.getNearbyServices(
-        serviceType: 'pathology',
-        limit: 50,
-      );
-
-      if (response.success && response.data != null) {
-        final labs = response.data!['pathologies'] ?? [];
+      // TODO: Implement pathology labs API endpoint
+      // For now, show empty state
+      if (mounted) {
         setState(() {
-          _labs = List<Map<String, dynamic>>.from(labs);
+          _labs = [];
+          _isLoading = false;
         });
       }
     } catch (e) {
-      print('Error loading labs: $e');
-    } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _labs = [];
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -198,8 +197,20 @@ class _PathologyScreenState extends State<PathologyScreen> {
     }
 
     if (_labs.isEmpty) {
-      return const Center(
-        child: Text('No labs available', style: TextStyle(fontSize: 16)),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.science, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            const Text('No labs available', style: TextStyle(fontSize: 16)),
+            const SizedBox(height: 8),
+            Text(
+              'Pathology lab services coming soon',
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            ),
+          ],
+        ),
       );
     }
 
@@ -217,9 +228,9 @@ class _PathologyScreenState extends State<PathologyScreen> {
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      backgroundColor: const Color(0xFFFF6B6B),
-                      child: const Icon(Icons.science, color: Colors.white),
+                    const CircleAvatar(
+                      backgroundColor: Color(0xFFFF6B6B),
+                      child: Icon(Icons.science, color: Colors.white),
                     ),
                     const SizedBox(width: 12),
                     Expanded(

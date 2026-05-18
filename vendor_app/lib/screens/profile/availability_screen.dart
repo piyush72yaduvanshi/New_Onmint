@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:auth_service/auth_service.dart';
-import 'package:ui_components/ui_components.dart';
 
 class AvailabilityScreen extends StatefulWidget {
-  const AvailabilityScreen({Key? key}) : super(key: key);
+  const AvailabilityScreen({super.key});
 
   @override
   State<AvailabilityScreen> createState() => _AvailabilityScreenState();
@@ -199,7 +198,7 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
                   ),
                   const SizedBox(height: 24),
                   
-                  ..._daysOfWeek.map((day) => _buildDaySection(day)).toList(),
+                  ..._daysOfWeek.map((day) => _buildDaySection(day)),
                 ],
               ),
             ),
@@ -250,7 +249,7 @@ class _AvailabilityScreenState extends State<AvailabilityScreen> {
                 final index = entry.key;
                 final slot = entry.value;
                 return _buildTimeSlot(day, index, slot);
-              }).toList(),
+              }),
           ],
         ),
       ),

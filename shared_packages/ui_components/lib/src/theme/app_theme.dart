@@ -98,13 +98,13 @@ class AppTheme {
       ),
       
       // Card Theme
-      cardTheme: const CardThemeData(
+      cardTheme: CardTheme(
         color: Colors.white,
         elevation: 2,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
+          borderRadius: BorderRadius.circular(12),
         ),
-        margin: EdgeInsets.all(8),
+        margin: const EdgeInsets.all(8),
       ),
       
       // Bottom Navigation Bar Theme
@@ -142,13 +142,13 @@ class AppTheme {
       ),
       
       // Dialog Theme
-      dialogTheme: const DialogThemeData(
+      dialogTheme: DialogTheme(
         backgroundColor: Colors.white,
         elevation: 8,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(12)),
+          borderRadius: BorderRadius.circular(12),
         ),
-        titleTextStyle: TextStyle(
+        titleTextStyle: const TextStyle(
           color: Colors.black87,
           fontSize: 20,
           fontWeight: FontWeight.w600,

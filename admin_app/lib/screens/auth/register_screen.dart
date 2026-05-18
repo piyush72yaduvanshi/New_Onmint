@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:auth_service/auth_service.dart';
 import 'package:location_service/location_service.dart';
-import 'package:ui_components/ui_components.dart';
+import '../../config/app_colors.dart';
+import '../../utils/form_validators.dart';
+import '../../models/registration_request.dart';
+import '../../widgets/loading_widget.dart';
 
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({Key? key}) : super(key: key);
+  const RegisterScreen({super.key});
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -165,7 +168,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         child: TextFormField(
                           controller: _firstNameController,
                           textCapitalization: TextCapitalization.words,
-                          validator: (value) => FormValidators.validateName(value, fieldName: 'First name'),
+                          validator: FormValidators.validateName,
                           decoration: const InputDecoration(
                             labelText: 'First Name',
                             prefixIcon: Icon(Icons.person_outlined),
@@ -177,7 +180,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         child: TextFormField(
                           controller: _lastNameController,
                           textCapitalization: TextCapitalization.words,
-                          validator: (value) => FormValidators.validateName(value, fieldName: 'Last name'),
+                          validator: FormValidators.validateName,
                           decoration: const InputDecoration(
                             labelText: 'Last Name',
                             prefixIcon: Icon(Icons.person_outlined),
@@ -341,14 +344,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: AppColors.warning.withOpacity(0.3)),
                     ),
-                    child: Row(
+                    child: const Row(
                       children: [
                         Icon(
                           Icons.security,
                           color: AppColors.warning,
                           size: 20,
                         ),
-                        const SizedBox(width: 12),
+                        SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             'Admin accounts have full system access. Only create accounts for authorized personnel.',

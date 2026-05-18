@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:auth_service/auth_service.dart';
-import 'package:location_service/location_service.dart';
 import 'package:ui_components/ui_components.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import '../../config/app_colors.dart';
+import '../../config/app_config.dart';
 
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({Key? key}) : super(key: key);
+  const RegisterScreen({super.key});
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -13,246 +16,237 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
+  final _imagePicker = ImagePicker();
+  
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
+  final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _cityController = TextEditingController();
-  final _stateController = TextEditingController();
-  final _pincodeController = TextEditingController();
-  final _specializationController = TextEditingController();
-  final _qualificationsController = TextEditingController();
-  final _experienceController = TextEditingController();
-  final _consultationFeeController = TextEditingController();
-  final _licenseNumberController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   
+  String? _selectedRole;
+  bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
-  LocationPoint? _currentLocation;
-  String _selectedRole = 'doctor';
-  List<String> _selectedLanguages = [];
-
-  final List<String> _vendorRoles = [
-    'doctor',
-    'pharmacist', 
-    'nurse',
-    'ambulance',
-    'bloodbank',
-    'pathology',
-  ];
-
-  final List<String> _languages = [
-    'English',
-    'Hindi',
-    'Bengali',
-    'Telugu',
-    'Marathi',
-    'Tamil',
-    'Gujarati',
-    'Urdu',
-    'Kannada',
-    'Malayalam',
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _getCurrentLocation();
-  }
+  
+  // Consultation types (for doctor and nurse)
+  final List<String> _consultationTypes = [];
+  
+  // Profile picture
+  XFile? _profilePicture;
+  
+  // Documents
+  final Map<String, XFile?> _documents = {
+    'license': null,
+    'certificate': null,
+    'idProof': null,
+    'addressProof': null,
+  };
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
+    _emailController.dispose();
     _phoneController.dispose();
-    _cityController.dispose();
-    _stateController.dispose();
-    _pincodeController.dispose();
-    _specializationController.dispose();
-    _qualificationsController.dispose();
-    _experienceController.dispose();
-    _consultationFeeController.dispose();
-    _licenseNumberController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  Future<void> _getCurrentLocation() async {
-    final locationProvider = Provider.of<LocationProvider>(context, listen: false);
-    final location = await locationProvider.getCurrentLocation();
-    if (location != null) {
-      setState(() {
-        _currentLocation = location;
-      });
+  Future<void> _pickProfilePicture() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+      
+      if (image != null) {
+        setState(() {
+          _profilePicture = image;
+        });
+      }
+    } catch (e) {
+      ToastUtils.showError('Failed to pick image: ${e.toString()}');
     }
   }
 
-  Future<void> _handleRegister() async {
+  Future<void> _pickDocument(String documentType) async {
+    try {
+      final XFile? file = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+      
+      if (file != null) {
+        setState(() {
+          _documents[documentType] = file;
+        });
+      }
+    } catch (e) {
+      ToastUtils.showError('Failed to pick document: ${e.toString()}');
+    }
+  }
+
+  void _removeDocument(String documentType) {
+    setState(() {
+      _documents[documentType] = null;
+    });
+  }
+
+  bool _validateDocuments() {
+    // Check if required documents are uploaded
+    final requiredDocs = ['license', 'certificate', 'idProof'];
+    for (String doc in requiredDocs) {
+      if (_documents[doc] == null) {
+        ToastUtils.showError('Please upload ${_getDocumentDisplayName(doc)}');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  String _getDocumentDisplayName(String docType) {
+    switch (docType) {
+      case 'license': return 'Professional License';
+      case 'certificate': return 'Degree Certificate';
+      case 'idProof': return 'ID Proof';
+      case 'addressProof': return 'Address Proof';
+      default: return docType;
+    }
+  }
+  
+  Widget _buildConsultationTypesSelector() {
+    return Column(
+      children: [
+        CheckboxListTile(
+          title: Row(
+            children: [
+              Icon(Icons.videocam, color: Colors.blue, size: 20),
+              const SizedBox(width: 12),
+              const Text('Video Call Consultation'),
+            ],
+          ),
+          subtitle: const Text('Online consultation via video call'),
+          value: _consultationTypes.contains('video-call'),
+          onChanged: (value) {
+            setState(() {
+              if (value == true) {
+                _consultationTypes.add('video-call');
+              } else {
+                _consultationTypes.remove('video-call');
+              }
+            });
+          },
+          activeColor: Colors.blue,
+        ),
+        CheckboxListTile(
+          title: Row(
+            children: [
+              Icon(Icons.person, color: Colors.green, size: 20),
+              const SizedBox(width: 12),
+              const Text('In-Person Visit'),
+            ],
+          ),
+          subtitle: const Text('Patient visits your clinic/location'),
+          value: _consultationTypes.contains('in-person'),
+          onChanged: (value) {
+            setState(() {
+              if (value == true) {
+                _consultationTypes.add('in-person');
+              } else {
+                _consultationTypes.remove('in-person');
+              }
+            });
+          },
+          activeColor: Colors.green,
+        ),
+        CheckboxListTile(
+          title: Row(
+            children: [
+              Icon(Icons.phone, color: Colors.orange, size: 20),
+              const SizedBox(width: 12),
+              const Text('Phone Call Consultation'),
+            ],
+          ),
+          subtitle: const Text('Consultation via phone call'),
+          value: _consultationTypes.contains('phone-call'),
+          onChanged: (value) {
+            setState(() {
+              if (value == true) {
+                _consultationTypes.add('phone-call');
+              } else {
+                _consultationTypes.remove('phone-call');
+              }
+            });
+          },
+          activeColor: Colors.orange,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_currentLocation == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Location is required. Please enable location services.'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+    if (_selectedRole == null) {
+      ToastUtils.showError('Please select your role');
+      return;
+    }
+    
+    // Validate consultation types for doctor and nurse
+    if ((_selectedRole == 'doctor' || _selectedRole == 'nurse') && _consultationTypes.isEmpty) {
+      ToastUtils.showError('Please select at least one consultation type');
       return;
     }
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
-    // Create role-specific registration request
-    RegistrationRequest registrationRequest;
-    
-    switch (_selectedRole) {
-      case 'doctor':
-        registrationRequest = RegistrationRequest.doctor(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-          firstName: _firstNameController.text.trim(),
-          lastName: _lastNameController.text.trim(),
-          phone: FormValidators.cleanPhoneNumber(_phoneController.text),
-          city: _cityController.text.trim(),
-          state: _stateController.text.trim(),
-          pincode: _pincodeController.text.trim(),
-          location: _currentLocation!,
-          specialization: _specializationController.text.trim(),
-          qualifications: _qualificationsController.text.trim().split(',').map((e) => e.trim()).toList(),
-          experience: int.tryParse(_experienceController.text) ?? 0,
-          consultationFee: double.tryParse(_consultationFeeController.text) ?? 0,
-          licenseNumber: _licenseNumberController.text.trim(),
-          languages: _selectedLanguages,
-          about: 'Experienced ${_specializationController.text.trim()} with ${_experienceController.text} years of experience.',
-          availability: [
-            {
-              "day": "MONDAY",
-              "slots": [
-                {"startTime": "09:00", "endTime": "12:00", "isAvailable": true},
-                {"startTime": "17:00", "endTime": "20:00", "isAvailable": true}
-              ]
-            },
-            {
-              "day": "WEDNESDAY", 
-              "slots": [
-                {"startTime": "09:00", "endTime": "12:00", "isAvailable": true}
-              ]
-            },
-            {
-              "day": "FRIDAY",
-              "slots": [
-                {"startTime": "17:00", "endTime": "20:00", "isAvailable": true}
-              ]
-            }
-          ],
-        );
-        break;
-      case 'pharmacist':
-        registrationRequest = RegistrationRequest.pharmacist(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-          firstName: _firstNameController.text.trim(),
-          lastName: _lastNameController.text.trim(),
-          phone: FormValidators.cleanPhoneNumber(_phoneController.text),
-          city: _cityController.text.trim(),
-          state: _stateController.text.trim(),
-          pincode: _pincodeController.text.trim(),
-          location: _currentLocation!,
-          pharmacyName: '${_firstNameController.text.trim()} ${_lastNameController.text.trim()} Pharmacy',
-          licenseNumber: _licenseNumberController.text.trim(),
-          deliveryTimes: ["30min", "1hr", "same_day"],
-          minimumOrderAmount: 99,
-          deliveryFee: 50,
-          operatingHours: {"open": "08:00", "close": "22:00"},
-        );
-        break;
-      case 'bloodbank':
-        registrationRequest = RegistrationRequest.bloodbank(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-          firstName: _firstNameController.text.trim(),
-          lastName: _lastNameController.text.trim(),
-          phone: FormValidators.cleanPhoneNumber(_phoneController.text),
-          city: _cityController.text.trim(),
-          state: _stateController.text.trim(),
-          pincode: _pincodeController.text.trim(),
-          location: _currentLocation!,
-          bankName: '${_firstNameController.text.trim()} ${_lastNameController.text.trim()} Blood Bank',
-          licenseNumber: _licenseNumberController.text.trim(),
-          bloodStock: [
-            {"bloodGroup": "A+", "unitsAvailable": 25},
-            {"bloodGroup": "B+", "unitsAvailable": 18},
-            {"bloodGroup": "O+", "unitsAvailable": 30},
-            {"bloodGroup": "AB+", "unitsAvailable": 10}
-          ],
-          emergencyContact: FormValidators.cleanPhoneNumber(_phoneController.text),
-          operatingHours: {"open": "00:00", "close": "23:59"},
-        );
-        break;
-      case 'ambulance':
-        registrationRequest = RegistrationRequest.ambulance(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-          firstName: _firstNameController.text.trim(),
-          lastName: _lastNameController.text.trim(),
-          phone: FormValidators.cleanPhoneNumber(_phoneController.text),
-          city: _cityController.text.trim(),
-          state: _stateController.text.trim(),
-          pincode: _pincodeController.text.trim(),
-          location: _currentLocation!,
-          driverName: '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}',
-          driverLicense: _licenseNumberController.text.trim(),
-          vehicleNumber: 'VH-${_pincodeController.text.trim()}-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}',
-          vehicleType: 'Advanced Life Support',
-          equipmentAvailable: ["Oxygen Cylinder", "ECG Monitor", "Defibrillator", "First Aid Kit", "Ventilator"],
-          isAvailable: true,
-          currentLocation: _currentLocation!,
-        );
-        break;
-      default:
-        // For other roles like nurse, pathology, etc.
-        registrationRequest = RegistrationRequest(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-          firstName: _firstNameController.text.trim(),
-          lastName: _lastNameController.text.trim(),
-          phone: FormValidators.cleanPhoneNumber(_phoneController.text),
-          city: _cityController.text.trim(),
-          state: _stateController.text.trim(),
-          pincode: _pincodeController.text.trim(),
-          role: _selectedRole,
-          location: _currentLocation!,
-          additionalFields: {
-            'licenseNumber': _licenseNumberController.text.trim(),
-            'specialization': _specializationController.text.trim(),
-            'experience': int.tryParse(_experienceController.text) ?? 1, // Default to 1 year if not provided
-          },
-        );
-    }
+    if (!_validateDocuments()) return;
 
-    final success = await authProvider.register(registrationRequest.toJson());
+    setState(() => _isLoading = true);
 
-    if (mounted) {
-      if (success) {
-        print('🎉 Registration successful!');
-        print('👤 Current user: ${authProvider.currentUser?.email}');
-        print('🔍 User role: ${authProvider.currentUser?.role}');
-        print('🔍 Is vendor: ${authProvider.isVendor}');
-        
-        // Always navigate to home after successful registration
-        // The backend has created the user, so we trust the registration was successful
-        Navigator.of(context).pushReplacementNamed('/home');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(authProvider.error ?? 'Registration failed'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      
+      // Prepare registration data
+      final Map<String, dynamic> registrationData = {
+        'firstName': _firstNameController.text.trim(),
+        'lastName': _lastNameController.text.trim(),
+        'email': _emailController.text.trim(),
+        'phone': _phoneController.text.trim(),
+        'password': _passwordController.text,
+        'role': _selectedRole!,
+      };
+      
+      // Add consultation types for doctor and nurse
+      if ((_selectedRole == 'doctor' || _selectedRole == 'nurse') && _consultationTypes.isNotEmpty) {
+        registrationData['consultationTypes'] = _consultationTypes;
+      }
+
+      // Note: File upload for registration not yet implemented in backend
+      // For now, just register with basic data
+      final success = await authProvider.register(registrationData);
+
+      if (!success) {
+        if (mounted) {
+          ToastUtils.showError(authProvider.error ?? 'Registration failed');
+        }
+        return;
+      }
+
+      if (mounted) {
+        ToastUtils.showSuccess('Registration successful! Please wait for admin approval.');
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastUtils.showError('Registration failed: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -261,495 +255,492 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Vendor Registration'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: AppColors.textPrimary,
+        title: const Text('Register as Provider'),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: AppColors.backgroundGradient,
-        ),
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Center(
-                    child: Column(
-                      children: [
-                        Text(
-                          'Join as Provider',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Create your healthcare provider account',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Role Selection
+                const Text(
+                  'Select Your Role',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
                   ),
-                  
-                  const SizedBox(height: 32),
-                  
-                  // Role Selection
-                  DropdownButtonFormField<String>(
-                    value: _selectedRole,
-                    decoration: const InputDecoration(
-                      labelText: 'Provider Type',
-                      prefixIcon: Icon(Icons.work_outlined),
-                    ),
-                    items: _vendorRoles.map((role) {
-                      return DropdownMenuItem(
-                        value: role,
-                        child: Text(RoleUtils.getRoleDisplayName(role)),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedRole = value!;
-                      });
-                    },
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Personal Information
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _firstNameController,
-                          textCapitalization: TextCapitalization.words,
-                          validator: (value) => FormValidators.validateName(value, fieldName: 'First name'),
-                          decoration: const InputDecoration(
-                            labelText: 'First Name',
-                            prefixIcon: Icon(Icons.person_outlined),
-                          ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: AppConfig.vendorRoles.map((role) {
+                    final isSelected = _selectedRole == role;
+                    final color = AppColors.getRoleColor(role);
+                    
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() => _selectedRole = role);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _lastNameController,
-                          textCapitalization: TextCapitalization.words,
-                          validator: (value) => FormValidators.validateName(value, fieldName: 'Last name'),
-                          decoration: const InputDecoration(
-                            labelText: 'Last Name',
-                            prefixIcon: Icon(Icons.person_outlined),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  TextFormField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    validator: FormValidators.validateEmail,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email_outlined),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  TextFormField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    validator: FormValidators.validatePhone,
-                    decoration: const InputDecoration(
-                      labelText: 'Phone Number',
-                      prefixIcon: Icon(Icons.phone_outlined),
-                    ),
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Location Information
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _cityController,
-                          textCapitalization: TextCapitalization.words,
-                          validator: FormValidators.validateCity,
-                          decoration: const InputDecoration(
-                            labelText: 'City',
-                            prefixIcon: Icon(Icons.location_city_outlined),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _stateController,
-                          textCapitalization: TextCapitalization.words,
-                          validator: FormValidators.validateState,
-                          decoration: const InputDecoration(
-                            labelText: 'State',
-                            prefixIcon: Icon(Icons.map_outlined),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  const SizedBox(height: 16),
-                  
-                  TextFormField(
-                    controller: _pincodeController,
-                    keyboardType: TextInputType.number,
-                    validator: FormValidators.validatePincode,
-                    decoration: const InputDecoration(
-                      labelText: 'Pincode',
-                      prefixIcon: Icon(Icons.pin_drop_outlined),
-                    ),
-                  ),
-                  
-                  // Role-specific fields
-                  if (_selectedRole == 'doctor') ...[
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Professional Information',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: _specializationController,
-                      validator: FormValidators.validateSpecialization,
-                      decoration: const InputDecoration(
-                        labelText: 'Specialization',
-                        prefixIcon: Icon(Icons.medical_services_outlined),
-                        hintText: 'e.g., Cardiologist, Dermatologist',
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: _qualificationsController,
-                      validator: FormValidators.validateQualifications,
-                      decoration: const InputDecoration(
-                        labelText: 'Qualifications',
-                        prefixIcon: Icon(Icons.school_outlined),
-                        hintText: 'MBBS, MD (Cardiology), DNB (Cardiology)',
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            controller: _experienceController,
-                            keyboardType: TextInputType.number,
-                            validator: FormValidators.validateExperience,
-                            decoration: const InputDecoration(
-                              labelText: 'Experience (Years)',
-                              prefixIcon: Icon(Icons.timeline_outlined),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: TextFormField(
-                            controller: _consultationFeeController,
-                            keyboardType: TextInputType.number,
-                            validator: FormValidators.validateConsultationFee,
-                            decoration: const InputDecoration(
-                              labelText: 'Consultation Fee (₹)',
-                              prefixIcon: Icon(Icons.currency_rupee_outlined),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: _licenseNumberController,
-                      validator: FormValidators.validateLicenseNumber,
-                      decoration: const InputDecoration(
-                        labelText: 'Medical License Number',
-                        prefixIcon: Icon(Icons.badge_outlined),
-                        hintText: 'DOC-XX-YYYY-NNNNN',
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    // Languages
-                    const Text(
-                      'Languages Spoken',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: _languages.map((language) {
-                        final isSelected = _selectedLanguages.contains(language);
-                        return FilterChip(
-                          label: Text(language),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            setState(() {
-                              if (selected) {
-                                _selectedLanguages.add(language);
-                              } else {
-                                _selectedLanguages.remove(language);
-                              }
-                            });
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ] else if (_selectedRole == 'pharmacist') ...[
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Pharmacy Information',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: _licenseNumberController,
-                      validator: FormValidators.validateLicenseNumber,
-                      decoration: const InputDecoration(
-                        labelText: 'Pharmacy License Number',
-                        prefixIcon: Icon(Icons.badge_outlined),
-                        hintText: 'PHARM-XX-YYYY-NNNNN',
-                      ),
-                    ),
-                  ] else if (_selectedRole == 'bloodbank') ...[
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Blood Bank Information',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: _licenseNumberController,
-                      validator: FormValidators.validateLicenseNumber,
-                      decoration: const InputDecoration(
-                        labelText: 'Blood Bank License Number',
-                        prefixIcon: Icon(Icons.badge_outlined),
-                        hintText: 'BB-XX-YYYY-NNN',
-                      ),
-                    ),
-                  ] else if (_selectedRole == 'ambulance') ...[
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Ambulance Service Information',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: _licenseNumberController,
-                      validator: FormValidators.validateLicenseNumber,
-                      decoration: const InputDecoration(
-                        labelText: 'Driver License Number',
-                        prefixIcon: Icon(Icons.badge_outlined),
-                        hintText: 'DL-NNNNNNNNNNNN',
-                      ),
-                    ),
-                  ] else ...[
-                    // For other roles (nurse, pathology, etc.)
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Professional Information',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: _specializationController,
-                      decoration: const InputDecoration(
-                        labelText: 'Specialization (Optional)',
-                        prefixIcon: Icon(Icons.medical_services_outlined),
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: _experienceController,
-                      keyboardType: TextInputType.number,
-                      validator: FormValidators.validateExperience,
-                      decoration: const InputDecoration(
-                        labelText: 'Experience (Years)',
-                        prefixIcon: Icon(Icons.timeline_outlined),
-                        hintText: 'Enter years of experience',
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    
-                    TextFormField(
-                      controller: _licenseNumberController,
-                      validator: FormValidators.validateLicenseNumber,
-                      decoration: const InputDecoration(
-                        labelText: 'License Number',
-                        prefixIcon: Icon(Icons.badge_outlined),
-                      ),
-                    ),
-                  ],
-                  
-                  const SizedBox(height: 16),
-                  
-                  // Location Status
-                  Consumer<LocationProvider>(
-                    builder: (context, locationProvider, child) {
-                      return Container(
-                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: _currentLocation != null ? AppColors.success.withOpacity(0.1) : AppColors.warning.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
+                          color: isSelected ? color : Colors.white,
+                          borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: _currentLocation != null ? AppColors.success : AppColors.warning,
+                            color: isSelected ? color : Colors.grey[300]!,
+                            width: 2,
                           ),
                         ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              _currentLocation != null ? Icons.location_on : Icons.location_off,
-                              color: _currentLocation != null ? AppColors.success : AppColors.warning,
+                              AppConfig.getRoleIcon(role),
+                              color: isSelected ? Colors.white : color,
+                              size: 20,
                             ),
                             const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _currentLocation != null 
-                                    ? 'Location detected successfully'
-                                    : 'Location required for registration',
-                                style: TextStyle(
-                                  color: _currentLocation != null ? AppColors.success : AppColors.warning,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                            Text(
+                              AppConfig.getRoleDisplayName(role),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: isSelected ? Colors.white : color,
                               ),
                             ),
-                            if (_currentLocation == null)
-                              TextButton(
-                                onPressed: _getCurrentLocation,
-                                child: const Text('Enable'),
-                              ),
                           ],
                         ),
-                      );
-                    },
+                      ),
+                    );
+                  }).toList(),
+                ),
+                
+                const SizedBox(height: 32),
+                
+                // Consultation Types (for doctor and nurse only)
+                if (_selectedRole == 'doctor' || _selectedRole == 'nurse') ...[
+                  const Text(
+                    'Consultation Types Offered',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                   
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
                   
-                  // Password
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    validator: FormValidators.validatePassword,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      prefixIcon: const Icon(Icons.lock_outlined),
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
-                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                      ),
+                  const Text(
+                    'Select the types of consultations you offer (select at least one)',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
                     ),
                   ),
                   
                   const SizedBox(height: 16),
                   
-                  TextFormField(
-                    controller: _confirmPasswordController,
-                    obscureText: _obscureConfirmPassword,
-                    validator: (value) => FormValidators.validateConfirmPassword(value, _passwordController.text),
-                    decoration: InputDecoration(
-                      labelText: 'Confirm Password',
-                      prefixIcon: const Icon(Icons.lock_outlined),
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscureConfirmPassword ? Icons.visibility : Icons.visibility_off),
-                        onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
-                      ),
-                    ),
-                  ),
+                  _buildConsultationTypesSelector(),
                   
                   const SizedBox(height: 32),
-                  
-                  Consumer<AuthProvider>(
-                    builder: (context, authProvider, child) {
-                      return ElevatedButton(
-                        onPressed: authProvider.isLoading ? null : _handleRegister,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                        ),
-                        child: authProvider.isLoading
-                            ? const SmallLoadingWidget()
-                            : const Text('Create Account'),
-                      );
+                ],
+                
+                // Personal Information
+                const Text(
+                  'Personal Information',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                Row(
+                  children: [
+                    Expanded(
+                      child: CustomTextField(
+                        controller: _firstNameController,
+                        label: 'First Name',
+                        hint: 'Enter first name',
+                        prefixIcon: Icons.person,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Required';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: CustomTextField(
+                        controller: _lastNameController,
+                        label: 'Last Name',
+                        hint: 'Enter last name',
+                        prefixIcon: Icons.person,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Required';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                
+                const SizedBox(height: 16),
+                
+                CustomTextField(
+                  controller: _emailController,
+                  label: 'Email',
+                  hint: 'Enter your email',
+                  prefixIcon: Icons.email,
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your email';
+                    }
+                    if (!value.contains('@')) {
+                      return 'Please enter a valid email';
+                    }
+                    return null;
+                  },
+                ),
+                
+                const SizedBox(height: 16),
+                
+                CustomTextField(
+                  controller: _phoneController,
+                  label: 'Phone Number',
+                  hint: 'Enter your phone number',
+                  prefixIcon: Icons.phone,
+                  keyboardType: TextInputType.phone,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter your phone number';
+                    }
+                    if (value.length != 10) {
+                      return 'Phone number must be 10 digits';
+                    }
+                    return null;
+                  },
+                ),
+                
+                const SizedBox(height: 32),
+                
+                // Security
+                const Text(
+                  'Security',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                CustomTextField(
+                  controller: _passwordController,
+                  label: 'Password',
+                  hint: 'Enter your password',
+                  prefixIcon: Icons.lock,
+                  obscureText: _obscurePassword,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                    ),
+                    onPressed: () {
+                      setState(() => _obscurePassword = !_obscurePassword);
                     },
                   ),
-                  
-                  const SizedBox(height: 24),
-                  
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter a password';
+                    }
+                    if (value.length < 8) {
+                      return 'Password must be at least 8 characters';
+                    }
+                    return null;
+                  },
+                ),
+                
+                const SizedBox(height: 16),
+                
+                CustomTextField(
+                  controller: _confirmPasswordController,
+                  label: 'Confirm Password',
+                  hint: 'Re-enter your password',
+                  prefixIcon: Icons.lock,
+                  obscureText: _obscureConfirmPassword,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
+                    ),
+                    onPressed: () {
+                      setState(() => _obscureConfirmPassword = !_obscureConfirmPassword);
+                    },
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please confirm your password';
+                    }
+                    if (value != _passwordController.text) {
+                      return 'Passwords do not match';
+                    }
+                    return null;
+                  },
+                ),
+                
+                const SizedBox(height: 32),
+                
+                // Profile Picture Section
+                const Text(
+                  'Profile Picture',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                _buildProfilePictureSection(),
+                
+                const SizedBox(height: 32),
+                
+                // Documents Section
+                const Text(
+                  'Required Documents',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                
+                const SizedBox(height: 8),
+                
+                const Text(
+                  'Please upload clear photos of the following documents:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                _buildDocumentsSection(),
+                
+                const SizedBox(height: 32),
+                
+                // Register Button
+                CustomButton(
+                  text: 'Register',
+                  onPressed: _register,
+                  isLoading: _isLoading,
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Note
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.info),
+                  ),
+                  child: const Row(
                     children: [
-                      const Text(
-                        'Already have an account? ',
-                        style: TextStyle(color: AppColors.textSecondary),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Sign In'),
+                      Icon(Icons.info, color: AppColors.info, size: 20),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Your account will be reviewed by admin before activation',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+                
+                const SizedBox(height: 24),
+              ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildProfilePictureSection() {
+    return Center(
+      child: GestureDetector(
+        onTap: _pickProfilePicture,
+        child: Container(
+          width: 120,
+          height: 120,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.grey[200],
+            border: Border.all(
+              color: AppColors.primary,
+              width: 2,
+            ),
+            image: _profilePicture != null
+                ? DecorationImage(
+                    image: FileImage(File(_profilePicture!.path)),
+                    fit: BoxFit.cover,
+                  )
+                : null,
+          ),
+          child: _profilePicture == null
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.camera_alt,
+                      size: 32,
+                      color: Colors.grey[600],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Add Photo',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocumentsSection() {
+    return Column(
+      children: [
+        _buildDocumentItem('license', 'Professional License', Icons.card_membership, true),
+        const SizedBox(height: 16),
+        _buildDocumentItem('certificate', 'Degree Certificate', Icons.school, true),
+        const SizedBox(height: 16),
+        _buildDocumentItem('idProof', 'ID Proof (Aadhar/PAN)', Icons.credit_card, true),
+        const SizedBox(height: 16),
+        _buildDocumentItem('addressProof', 'Address Proof', Icons.home, false),
+      ],
+    );
+  }
+
+  Widget _buildDocumentItem(String docType, String title, IconData icon, bool required) {
+    final hasDocument = _documents[docType] != null;
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: hasDocument ? AppColors.success : Colors.grey[300]!,
+          width: 2,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        color: hasDocument ? AppColors.success.withOpacity(0.05) : Colors.white,
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: hasDocument ? AppColors.success : Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              hasDocument ? Icons.check : icon,
+              color: hasDocument ? Colors.white : Colors.grey[600],
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (required)
+                      const Text(
+                        ' *',
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontSize: 16,
+                        ),
+                      ),
+                  ],
+                ),
+                if (hasDocument)
+                  const Text(
+                    'Document uploaded',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.success,
+                    ),
+                  )
+                else
+                  Text(
+                    required ? 'Required document' : 'Optional document',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (hasDocument)
+            IconButton(
+              onPressed: () => _removeDocument(docType),
+              icon: const Icon(Icons.close, color: Colors.red),
+            )
+          else
+            ElevatedButton.icon(
+              onPressed: () => _pickDocument(docType),
+              icon: const Icon(Icons.upload, size: 16),
+              label: const Text('Upload'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              ),
+            ),
+        ],
       ),
     );
   }

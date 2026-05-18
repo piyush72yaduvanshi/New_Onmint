@@ -31,6 +31,8 @@ dependencies:
   # Location
   geolocator: ^10.1.0
   permission_handler: ^11.0.1
+  google_maps_flutter: ^2.5.0
+  geocoding: ^4.0.0
   
   # Network
   http: ^1.1.0
@@ -41,6 +43,19 @@ dependencies:
   flutter_spinkit: ^5.2.0
   fluttertoast: ^8.2.4
   cached_network_image: ^3.3.0
+  jitsi_meet_flutter_sdk: ^10.2.0
+  webview_flutter: ^4.4.2
+  
+  # File handling
+  file_picker: ^6.1.1
+  path_provider: ^2.1.1
+  open_file: ^3.3.2
+  mime: ^1.0.4
+  
+  # Push Notifications
+  firebase_core: ^2.24.2
+  # firebase_messaging: ^14.7.9  # Temporarily disabled due to web compatibility issues
+  flutter_local_notifications: ^16.3.0
 
 dev_dependencies:
   flutter_test:
@@ -53,3 +68,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/images/categories/

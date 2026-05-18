@@ -41,6 +41,20 @@ dependencies:
   flutter_spinkit: ^5.2.0
   fluttertoast: ^8.2.4
   cached_network_image: ^3.3.0
+  jitsi_meet_flutter_sdk: ^11.6.0
+  webview_flutter: ^4.4.2
+  
+  # File handling
+  file_picker: ^6.1.1
+  path_provider: ^2.1.1
+  open_file: ^3.3.2
+  mime: ^1.0.4
+  image_picker: ^1.0.7
+  
+  # Push Notifications
+  firebase_core: ^2.24.2
+  # firebase_messaging: ^14.7.9  # COMMENTED OUT - causing compilation errors
+  flutter_local_notifications: ^16.3.0
 
 dev_dependencies:
   flutter_test:

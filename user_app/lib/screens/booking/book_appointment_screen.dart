@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:auth_service/auth_service.dart';
-import 'package:ui_components/ui_components.dart';
-import 'package:location_service/location_service.dart';
+import 'package:api_client/api_client.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
+import '../../services/error_handler_service.dart';
 
 class BookAppointmentScreen extends StatefulWidget {
   final Map<String, dynamic> doctor;
 
-  const BookAppointmentScreen({Key? key, required this.doctor}) : super(key: key);
+  const BookAppointmentScreen({super.key, required this.doctor});
 
   @override
   State<BookAppointmentScreen> createState() => _BookAppointmentScreenState();
@@ -15,7 +17,6 @@ class BookAppointmentScreen extends StatefulWidget {
 
 class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
   late final PatientService _patientService;
-  late final LocationService _locationService;
   final _formKey = GlobalKey<FormState>();
 
   final TextEditingController _symptomsController = TextEditingController();
@@ -25,12 +26,13 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   bool _isLoading = false;
+  String _consultationType = 'in-person'; // Default to in-person
+  Position? _currentPosition;
 
   @override
   void initState() {
     super.initState();
     _patientService = PatientService();
-    _locationService = LocationService();
   }
 
   @override
@@ -45,37 +47,48 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
     try {
       setState(() => _isLoading = true);
       
-      final location = await _locationService.getCurrentLocation();
-      if (location != null) {
-        final address = await _locationService.getAddressFromLocation(location);
-        
-        setState(() {
-          _addressController.text = address ?? 'Current Location';
-        });
-        
+      // Request location permission
+      final permission = await Permission.location.request();
+      if (!permission.isGranted) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Current location set successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Could not get current location'),
+              content: Text('Location permission denied'),
               backgroundColor: Colors.orange,
             ),
           );
         }
+        return;
+      }
+
+      // Get current position using geolocator directly
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      
+      // Store position for later use
+      _currentPosition = position;
+      
+      // Use a simple address format with coordinates
+      final address = 'Lat: ${position.latitude.toStringAsFixed(4)}, Lng: ${position.longitude.toStringAsFixed(4)}';
+      
+      setState(() {
+        _addressController.text = address;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Current location set successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error getting location: $e'),
+            content: Text('Error getting location: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -88,24 +101,130 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
   }
 
   Future<void> _selectDate() async {
+    // Get available days from doctor's availability
+    final availability = widget.doctor['availability'] as List?;
+    
     final date = await showDatePicker(
       context: context,
       initialDate: DateTime.now().add(const Duration(days: 1)),
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 30)),
+      selectableDayPredicate: (DateTime date) {
+        // If no availability data, allow all days
+        if (availability == null || availability.isEmpty) {
+          return true;
+        }
+        
+        // Check if the day is in doctor's availability
+        final dayName = _getDayName(date.weekday);
+        return availability.any((avail) => 
+          avail['day']?.toString().toUpperCase() == dayName.toUpperCase()
+        );
+      },
     );
+    
     if (date != null) {
-      setState(() => _selectedDate = date);
+      setState(() {
+        _selectedDate = date;
+        _selectedTime = null; // Reset time when date changes
+      });
     }
   }
 
+  String _getDayName(int weekday) {
+    const days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+    return days[weekday - 1];
+  }
+
   Future<void> _selectTime() async {
-    final time = await showTimePicker(
+    if (_selectedDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a date first'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Get available time slots for the selected date
+    final availability = widget.doctor['availability'] as List?;
+    final dayName = _getDayName(_selectedDate!.weekday);
+    
+    List<Map<String, dynamic>> availableSlots = [];
+    
+    if (availability != null) {
+      final dayAvailability = availability.firstWhere(
+        (avail) => avail['day']?.toString().toUpperCase() == dayName.toUpperCase(),
+        orElse: () => null,
+      );
+      
+      if (dayAvailability != null && dayAvailability['slots'] != null) {
+        final slots = dayAvailability['slots'] as List;
+        availableSlots = slots
+            .where((slot) => slot['isAvailable'] == true)
+            .map((slot) => {
+              'startTime': slot['startTime'],
+              'endTime': slot['endTime'],
+            })
+            .toList()
+            .cast<Map<String, dynamic>>();
+      }
+    }
+
+    if (availableSlots.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No available slots for this date'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Show dialog with available time slots
+    final selectedSlot = await showDialog<Map<String, dynamic>>(
       context: context,
-      initialTime: const TimeOfDay(hour: 10, minute: 0),
+      builder: (context) => AlertDialog(
+        title: const Text('Select Time Slot'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: availableSlots.length,
+            itemBuilder: (context, index) {
+              final slot = availableSlots[index];
+              return ListTile(
+                title: Text('${slot['startTime']} - ${slot['endTime']}'),
+                trailing: const Icon(Icons.access_time, color: Colors.green),
+                onTap: () => Navigator.pop(context, slot),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
     );
-    if (time != null) {
-      setState(() => _selectedTime = time);
+
+    if (selectedSlot != null) {
+      // Parse the start time
+      final startTime = selectedSlot['startTime'] as String;
+      final parts = startTime.split(':');
+      if (parts.length >= 2) {
+        setState(() {
+          _selectedTime = TimeOfDay(
+            hour: int.parse(parts[0]),
+            minute: int.parse(parts[1]),
+          );
+        });
+      }
     }
   }
 
@@ -139,72 +258,46 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
         _selectedTime!.minute,
       );
 
+      // Calculate price based on consultation type
+      final basePrice = widget.doctor['consultationFee'] ?? 0;
+      final consultationPrice = _consultationType == 'video-call' 
+          ? (basePrice * 0.8).round() // 20% discount for video calls
+          : basePrice;
+
       final bookingData = {
         'serviceType': 'doctor',
         'provider': widget.doctor['_id'] ?? widget.doctor['id'] ?? '',
         'scheduledTime': scheduledDateTime.toIso8601String(),
+        'consultationType': _consultationType,
         'symptoms': _symptomsController.text.trim(),
-        'location': {
-          'address': _addressController.text.trim().isNotEmpty 
-              ? _addressController.text.trim() 
-              : 'Patient Location',
-          'coordinates': [
-            user.location.longitude,
-            user.location.latitude,
-          ],
-        },
-        'price': widget.doctor['consultationFee'] ?? 0,
+        'price': consultationPrice,
         if (_notesController.text.trim().isNotEmpty)
           'notes': _notesController.text.trim(),
       };
 
-      final response = await _patientService.createBooking(bookingData);
+      // Only add location for in-person consultations
+      if (_consultationType == 'in-person') {
+        // Use current position if available, otherwise use user's stored location
+        final latitude = _currentPosition?.latitude ?? user.location?.latitude ?? 0.0;
+        final longitude = _currentPosition?.longitude ?? user.location?.longitude ?? 0.0;
+        
+        bookingData['location'] = {
+          'address': _addressController.text.trim().isNotEmpty 
+              ? _addressController.text.trim() 
+              : 'Patient Location',
+          'coordinates': [longitude, latitude],
+        };
+      }
 
-      if (response.success) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Appointment booked successfully!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.pop(context, true);
-        }
-      } else {
-        String errorMessage = 'Failed to book appointment';
-        
-        // Handle specific error messages from backend
-        if (response.error?.message != null) {
-          final message = response.error!.message.toLowerCase();
-          if (message.contains('not available') || message.contains('sunday')) {
-            errorMessage = response.error!.message;
-          } else if (message.contains('validation')) {
-            errorMessage = 'Please check your booking details';
-          } else if (message.contains('unauthorized')) {
-            errorMessage = 'Please login again to book appointment';
-          } else {
-            errorMessage = response.error!.message;
-          }
-        }
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(errorMessage),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-        }
+      await _patientService.createBooking(bookingData);
+
+      if (mounted) {
+        ErrorHandlerService.showSuccess(context, 'Appointment booked successfully!');
+        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error booking appointment: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        ErrorHandlerService.showError(context, e.toString());
       }
     } finally {
       if (mounted) {
@@ -222,7 +315,7 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Book Appointment'),
-        backgroundColor: AppColors.primary,
+        backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(
@@ -243,7 +336,7 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
                         children: [
                           CircleAvatar(
                             radius: 30,
-                            backgroundColor: AppColors.primary,
+                            backgroundColor: Colors.blue,
                             child: Text(
                               doctorName.isNotEmpty
                                   ? doctorName.substring(0, 1).toUpperCase()
@@ -269,9 +362,9 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
                                 ),
                                 Text(
                                   specialization,
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 14,
-                                    color: AppColors.textSecondary,
+                                    color: Colors.grey,
                                   ),
                                 ),
                               ],
@@ -331,6 +424,84 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
 
               const SizedBox(height: 24),
 
+              // Consultation Type Selection
+              const Text(
+                'Consultation Type',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[300]!),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    RadioListTile<String>(
+                      title: Row(
+                        children: [
+                          const Icon(Icons.person, color: Colors.blue),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('In-Person Visit'),
+                                Text(
+                                  '₹$consultationFee',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      value: 'in-person',
+                      groupValue: _consultationType,
+                      onChanged: (value) {
+                        setState(() => _consultationType = value!);
+                      },
+                    ),
+                    const Divider(height: 1),
+                    RadioListTile<String>(
+                      title: Row(
+                        children: [
+                          const Icon(Icons.video_call, color: Colors.green),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Video Consultation'),
+                                Text(
+                                  '₹${(double.parse(consultationFee) * 0.8).round()} (20% off)',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      value: 'video-call',
+                      groupValue: _consultationType,
+                      onChanged: (value) {
+                        setState(() => _consultationType = value!);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
               // Symptoms
               const Text(
                 'Symptoms',
@@ -371,41 +542,69 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
 
               const SizedBox(height: 24),
 
-              // Location
-              const Text(
-                'Location',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      controller: _addressController,
-                      decoration: const InputDecoration(
-                        hintText: 'Enter your address or clinic location',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.location_on),
+              // Location (only for in-person consultations)
+              if (_consultationType == 'in-person') ...[
+                const Text(
+                  'Location',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _addressController,
+                        decoration: const InputDecoration(
+                          hintText: 'Enter your address or clinic location',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.location_on),
+                        ),
+                        validator: (value) {
+                          if (_consultationType == 'in-person' && (value == null || value.trim().isEmpty)) {
+                            return 'Please enter location for in-person visit';
+                          }
+                          return null;
+                        },
                       ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Please enter location';
-                        }
-                        return null;
-                      },
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: _useCurrentLocation,
-                    icon: const Icon(Icons.my_location),
-                    label: const Text('Current'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _useCurrentLocation,
+                      icon: const Icon(Icons.my_location),
+                      label: const Text('Current'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+              ],
+
+              // Video call info
+              if (_consultationType == 'video-call') ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green[200]!),
                   ),
-                ],
-              ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.green[700]),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'You will receive a video call link before your appointment time.',
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
 
               const SizedBox(height: 32),
 
@@ -415,7 +614,7 @@ class _BookAppointmentScreenState extends State<BookAppointmentScreen> {
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _bookAppointment,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
+                    backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                   ),
